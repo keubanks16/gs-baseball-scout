@@ -95,8 +95,15 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .drop { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #dfe8e1; background:
   radial-gradient(120% 90% at 50% 120%, rgba(79, 158, 105, .35), transparent 60%), var(--film); }
 .drop.over { outline: 3px dashed var(--clay); outline-offset: -12px; }
-.drop h2 { font: 800 clamp(26px, 4vw, 40px)/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
-.drop p { margin: 8px auto 18px; max-width: 46ch; color: #b8c7bc; font-size: 14px; }
+.stage.empty { aspect-ratio: auto; }
+.stage.empty .drop { position: relative; inset: auto; min-height: 300px; }
+label.drop { cursor: pointer; }
+.drop-in { display: block; }
+.drop .drop-h { display: block; font: 800 clamp(26px, 4vw, 40px)/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.drop .drop-p { display: block; margin: 10px auto 20px; max-width: 46ch; color: #b8c7bc; font-size: 14px; }
+@media (hover: none) { .drop .desk { display: none; } }
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.film:has(#file:focus-visible) .drop { outline: 3px solid var(--pred); outline-offset: -6px; }
 .drop .diamond { width: 92px; height: 92px; margin: 0 auto 14px; opacity: .9; }
 .btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; }
 .btn.primary { background: var(--clay); border-color: var(--clay); color: var(--clay-ink); }
@@ -261,21 +268,21 @@ label.f.wide { grid-column: 1 / -1; }
   <!-- ======================= ANALYZE ======================= -->
   <section class="analyze" id="viewAnalyze" role="tabpanel" aria-labelledby="tabAnalyze">
     <div class="film">
-      <div class="stage" id="stage">
+      <div class="stage empty" id="stage">
         <video id="video" playsinline muted preload="auto" hidden></video>
         <canvas class="ov" id="overlay" hidden></canvas>
-        <div class="drop" id="drop">
-          <div>
+        <label class="drop" id="drop" for="file">
+          <span class="drop-in">
             <svg class="diamond" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 92 L8 50 L50 8 L92 50 Z" fill="none" stroke="#9fc5aa" stroke-width="2"/><path d="M50 92 L14 56 A51 51 0 0 1 86 56 Z" fill="rgba(217,185,154,.25)"/><circle cx="50" cy="56" r="4" fill="#d9b99a"/><rect x="46" y="88" width="8" height="8" fill="#eef3ef"/><rect x="84" y="46" width="7" height="7" fill="#eef3ef" transform="rotate(45 87.5 49.5)"/><rect x="46.5" y="4.5" width="7" height="7" fill="#eef3ef" transform="rotate(45 50 8)"/><rect x="5" y="46" width="7" height="7" fill="#eef3ef" transform="rotate(45 8.5 49.5)"/></svg>
-            <h2>Drop game clips here</h2>
-            <p>GameChanger play clips or screen recordings, one swing each. Videos stay on this device; only the swing measurements and the result are saved.</p>
-            <label class="btn primary" for="file">Choose clips</label>
-            <input type="file" id="file" accept="video/*" multiple hidden>
-          </div>
-        </div>
+            <span class="drop-h">Add game clips</span>
+            <span class="drop-p">Pick GameChanger play clips or screen recordings from your phone or computer, one swing each<span class="desk">, or drag them here</span>. Videos stay on this device; only the swing measurements and the result are saved.</span>
+            <span class="btn primary">Choose clips</span>
+          </span>
+        </label>
         <div class="hint" id="hint" hidden></div>
         <div class="progress" id="progress" hidden><span id="progText">Working…</span><button id="btnStop" type="button">Stop</button><div class="bar"><i id="progBar"></i></div></div>
       </div>
+      <input type="file" id="file" class="vh" accept="video/*" multiple aria-label="Choose game clips">
       <div class="transport" id="transport" hidden>
         <button class="btn small" id="btnPlay" type="button" aria-label="Play">Play</button>
         <button class="btn small ghost" id="btnBack" type="button" aria-label="Back one frame">◀ Frame</button>
@@ -299,7 +306,7 @@ label.f.wide { grid-column: 1 / -1; }
       <section class="panel" id="pIntro">
         <div class="panel-h"><h2>How it works</h2></div>
         <ol class="howto">
-          <li><div><b>Drop in a clip and tap the batter</b><span id="howStep1">Claude reads the GameChanger scoreboard so the at-bat is filed under the right hitter.</span></div></li>
+          <li><div><b>Add a clip and tap the batter</b><span id="howStep1">Claude reads the GameChanger scoreboard so the at-bat is filed under the right hitter.</span></div></li>
           <li><div><b>GS Baseball Scout tracks the swing</b><span>A pose model follows 17 points on the batter's body, finds leg lift, foot down, hip and shoulder turn, and looks for the ball off the bat.</span></div></li>
           <li><div><b>It makes the call before you tag it</b><span>Pull, middle or opposite field, from that hitter's history and from swings that looked like this one.</span></div></li>
           <li><div><b>Tap where the ball went</b><span>Every tagged at-bat sharpens the spray chart, the defensive positioning and the next prediction.</span></div></li>
@@ -498,7 +505,7 @@ async function openClip(i) {
   if (S.url) URL.revokeObjectURL(S.url);
   S.url = URL.createObjectURL(it.file);
   resetClipState();
-  video.hidden = false; overlay.hidden = false; drop.hidden = true;
+  video.hidden = false; overlay.hidden = false; drop.hidden = true; $('stage').classList.remove('empty');
   $('transport').hidden = false; $('timeline').hidden = false;
   $('pIntro').hidden = true; $('pBatter').hidden = false; $('pSwing').hidden = false; $('pCall').hidden = true;
   $('clipName').textContent = it.file.name;
