@@ -1,0 +1,1491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GS Baseball Scout</title>
+<meta name="description" content="Track each batter's swing from GameChanger clips, tag where the ball went, and get spray charts, defensive positioning and a call on where each hitter will hit it next.">
+<meta name="theme-color" content="#142019">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GS Scout">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+<style>
+/* Layout: a coach's scouting card beside the game film. Film and timeline on the left,
+   the card (batter, swing, call, result) on the right; stacks to one column on phones. */
+:root {
+  --bg: #eef1ec;          /* chalk */
+  --surface: #fbfcfa;
+  --surface-2: #e4e9e2;
+  --ink: #142019;         /* dugout green-black */
+  --muted: #5b685f;
+  --line: #cfd7cc;
+  --clay: #b4502a;        /* infield clay: actions, the actual result */
+  --clay-ink: #ffffff;
+  --grass: #3d7c52;
+  --grass-2: #cfe2d2;
+  --dirt: #d9b99a;
+  --pred: #2c5fae;        /* chalk blue: the prediction */
+  --pred-soft: rgba(44, 95, 174, .14);
+  --good: #2f7a47;
+  --warn: #a26a12;
+  --film: #0b120e;
+  --shadow: 0 1px 2px rgba(20, 32, 25, .06), 0 8px 24px rgba(20, 32, 25, .06);
+  --display: "Big Shoulders Display", "Oswald", "Arial Narrow", Impact, sans-serif;
+  --body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d1611; --surface: #142019; --surface-2: #1b2a21; --ink: #e7eee8; --muted: #93a499; --line: #283a2f;
+  --clay: #e27849; --clay-ink: #1a0d06; --grass: #4f9e69; --grass-2: #1f3a2a; --dirt: #6b4a33; --pred: #86b2f2; --pred-soft: rgba(134, 178, 242, .16);
+  --good: #6cc18b; --warn: #e2b45a; --film: #050907; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0d1611; --surface: #142019; --surface-2: #1b2a21; --ink: #e7eee8; --muted: #93a499; --line: #283a2f;
+  --clay: #e27849; --clay-ink: #1a0d06; --grass: #4f9e69; --grass-2: #1f3a2a; --dirt: #6b4a33; --pred: #86b2f2; --pred-soft: rgba(134, 178, 242, .16);
+  --good: #6cc18b; --warn: #e2b45a; --film: #050907; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--pred); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { padding-inline: 16px; padding-block: 0 48px; max-width: 1360px; margin: 0 auto; }
+
+/* ---------- top bar ---------- */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--bg); border-bottom: 1px solid var(--line); }
+.top-in { display: flex; align-items: center; gap: 20px; padding: 10px 16px; max-width: 1360px; margin: 0 auto; flex-wrap: wrap; }
+.mark { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+.mark b { font: 900 26px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.mark b span { color: var(--clay); }
+.mark small { color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) {
+  .top-in { gap: 10px; padding: 8px 16px; }
+  .mark { flex: 1 1 100%; margin-right: 0; }
+  .mark small { display: none; }
+  .tabs { margin-right: auto; }
+  .sync span { display: none; }
+}
+.tabs { display: flex; gap: 2px; background: var(--surface-2); padding: 3px; border-radius: 999px; }
+.tabs button { border: 0; background: transparent; padding: 6px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; }
+.icon-btn svg { width: 18px; height: 18px; }
+.sync { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.sync.on i { background: var(--good); }
+.sync.off i { background: var(--warn); }
+
+/* ---------- analyze layout ---------- */
+.analyze { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); gap: 20px; padding-top: 18px; align-items: start; }
+@media (max-width: 980px) { .analyze { grid-template-columns: minmax(0, 1fr); } }
+.film { min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 72px); }
+@media (max-width: 980px) { .film { position: static; } }
+.stage { position: relative; background: var(--film); border-radius: var(--r); overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+.stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.stage canvas.ov { position: absolute; inset: 0; width: 100%; height: 100%; }
+.stage.tapping canvas.ov { cursor: crosshair; }
+.drop { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #dfe8e1; background:
+  radial-gradient(120% 90% at 50% 120%, rgba(79, 158, 105, .35), transparent 60%), var(--film); }
+.drop.over { outline: 3px dashed var(--clay); outline-offset: -12px; }
+.drop h2 { font: 800 clamp(26px, 4vw, 40px)/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.drop p { margin: 8px auto 18px; max-width: 46ch; color: #b8c7bc; font-size: 14px; }
+.drop .diamond { width: 92px; height: 92px; margin: 0 auto 14px; opacity: .9; }
+.btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+.btn.primary { background: var(--clay); border-color: var(--clay); color: var(--clay-ink); }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.drop .btn.primary { font-size: 15px; padding: 11px 20px; }
+.hint { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(11, 18, 14, .82); color: #f1f5f2; padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+.hint b { color: #ffb38f; }
+.progress { position: absolute; left: 12px; right: 12px; bottom: 12px; background: rgba(11, 18, 14, .86); color: #eef3ef; border-radius: 8px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; font-size: 13px; }
+.progress .bar { grid-column: 1 / -1; height: 4px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; }
+.progress .bar i { display: block; height: 100%; width: 0; background: #ffb38f; transition: width .2s; }
+.progress button { background: transparent; border: 1px solid rgba(255,255,255,.3); color: #eef3ef; border-radius: 6px; padding: 3px 10px; font-size: 12px; }
+
+.transport { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.transport .t { font-size: 13px; color: var(--muted); margin-left: 4px; }
+.transport .sp { margin-left: auto; display: flex; gap: 2px; background: var(--surface-2); border-radius: 8px; padding: 2px; }
+.transport .sp button { border: 0; background: transparent; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.transport .sp button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+.tl { width: 100%; height: 58px; display: block; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); cursor: pointer; touch-action: none; }
+.queue { display: flex; gap: 6px; flex-wrap: wrap; }
+.qchip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
+.qchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qchip i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+.qchip.cur { border-color: var(--ink); }
+.qchip.saved i { background: var(--good); }
+.qchip.skipped i { background: var(--warn); }
+
+/* ---------- the card ---------- */
+.card { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.panel-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.panel-h h2 { font: 800 21px/1.05 var(--display); letter-spacing: .03em; text-transform: uppercase; }
+.panel-h .step { font: 800 13px/1 var(--display); color: var(--clay); letter-spacing: .08em; }
+.panel-h .aside { margin-left: auto; font-size: 12px; color: var(--muted); text-align: right; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.bgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.bgrid .c2 { grid-column: span 2; } .bgrid .c4 { grid-column: span 4; } .bgrid .c6 { grid-column: 1 / -1; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; min-width: 0; }
+label.f input, label.f select { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 7px 9px; font-size: 14px; font-weight: 500; color: var(--ink); width: 100%; min-width: 0; }
+label.f.wide { grid-column: 1 / -1; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.status { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+.status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pred); flex: none; }
+.status.busy .dot { animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .status.busy .dot { animation: none; } .progress .bar i { transition: none; } }
+
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.metric { background: var(--surface); padding: 10px 12px; min-width: 0; }
+.metric .k { font-size: 11.5px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+.metric .v { font: 800 26px/1.1 var(--display); letter-spacing: .01em; }
+.metric .v.txt { font-size: 21px; line-height: 1.15; padding: 2px 0 1px; }
+.metric .v small { font: 600 12px var(--body); color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+.metric .d { font-size: 12px; color: var(--muted); }
+.flag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); letter-spacing: .02em; }
+.flag.pred { background: var(--pred-soft); color: var(--pred); }
+.flag.clay { background: color-mix(in srgb, var(--clay) 16%, transparent); color: var(--clay); }
+.flag.good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+
+.call { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.callline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.callline .big { font: 900 34px/1 var(--display); text-transform: uppercase; letter-spacing: .02em; color: var(--pred); }
+.callline .pct { font: 800 22px/1 var(--display); color: var(--pred); }
+.bars { display: grid; gap: 6px; }
+.barrow { display: grid; grid-template-columns: 104px minmax(0, 1fr) 44px; gap: 8px; align-items: center; font-size: 13px; }
+.barrow .track { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+.barrow .track i { display: block; height: 100%; background: var(--pred); border-radius: 5px; }
+.barrow.actual .track i { background: var(--clay); }
+.barrow .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.fieldbox { position: relative; }
+.fieldbox svg { width: 100%; height: auto; display: block; touch-action: manipulation; }
+.fieldbox.tap svg { cursor: crosshair; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chip.sugg { border-style: dashed; border-color: var(--pred); }
+.sublabel { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin: 14px 0 6px; }
+.actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.howto { counter-reset: s; display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.howto li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; }
+.howto li::before { counter-increment: s; content: counter(s); font: 900 22px/1 var(--display); color: var(--clay); text-align: center; padding-top: 1px; }
+.howto b { display: block; }
+.howto span { color: var(--muted); font-size: 13.5px; }
+.recent { display: grid; gap: 1px; background: var(--line); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.recent button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; background: var(--surface); cursor: pointer; font-size: 13.5px; }
+.recent button:focus-visible { outline: 2px solid var(--pred); outline-offset: -2px; }
+.jersey { font: 800 17px/1 var(--display); background: var(--ink); color: var(--surface); border-radius: 6px; width: 34px; height: 30px; display: grid; place-items: center; }
+.empty { color: var(--muted); font-size: 13.5px; padding: 6px 0; }
+
+/* ---------- hitters ---------- */
+.hitters { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 20px; padding-top: 18px; align-items: start; }
+@media (max-width: 900px) { .hitters { grid-template-columns: minmax(0, 1fr); } }
+.record { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; }
+.record h2 { font: 800 19px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.record .stat { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--muted); }
+.record .stat b { font: 800 24px/1 var(--display); color: var(--ink); }
+.hlist { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.hlist input[type=search] { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.rows { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.hrow { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 36px minmax(0, 1fr) 70px; gap: 10px; align-items: center; padding: 10px 12px; background: var(--surface); cursor: pointer; }
+.hrow[aria-current="true"] { background: var(--surface-2); }
+.hrow:focus-visible { outline: 2px solid var(--pred); outline-offset: -2px; }
+.hrow .nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow .sub { font-size: 12px; color: var(--muted); }
+.spark { display: flex; height: 10px; gap: 1px; border-radius: 3px; overflow: hidden; }
+.spark i { display: block; background: var(--pred); }
+.detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dhead { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.dhead .jersey { width: 54px; height: 48px; font-size: 28px; border-radius: 8px; }
+.dhead h2 { font: 900 clamp(28px, 4vw, 40px)/1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.dgrid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1100px) { .dgrid { grid-template-columns: minmax(0, 1fr); } }
+.abhead, .abrow { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.abhead { font-size: 11.5px; color: var(--muted); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 0 0 6px; border-bottom: 1px solid var(--line); }
+.abrow { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.abrow:last-child { border-bottom: 0; }
+.abact { display: flex; gap: 12px; justify-content: flex-end; }
+@media (max-width: 640px) {
+  .abhead { display: none; }
+  .abrow { grid-template-columns: minmax(0, 1fr) auto; }
+  .abrow > div:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .abact { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.log { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.log th { text-align: left; font-size: 11.5px; color: var(--muted); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.log td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.log tr:last-child td { border-bottom: 0; }
+.tablewrap { overflow-x: auto; }
+.linkish { background: none; border: 0; padding: 0; color: var(--pred); font-weight: 600; font-size: 13px; }
+
+/* ---------- modal + toast ---------- */
+.scrim { position: fixed; inset: 0; background: rgba(5, 9, 7, .55); display: grid; place-items: center; padding: 16px; z-index: 50; }
+.modal { background: var(--surface); border-radius: 12px; padding: 18px; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.modal h2 { font: 800 24px/1 var(--display); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 12px; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; z-index: 60; max-width: calc(100% - 32px); }
+.replay { width: 100%; aspect-ratio: 1; background: var(--film); border-radius: 8px; display: block; max-width: 100%; }
+.err { color: var(--clay); font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="mark"><b><span>GS</span> Baseball Scout</b><small>game film → spray charts → the call</small></div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tabAnalyze" aria-selected="true" aria-controls="viewAnalyze">Analyze</button>
+      <button role="tab" id="tabHitters" aria-selected="false" aria-controls="viewHitters">Hitters</button>
+    </nav>
+    <span class="sync" id="sync"><i></i><span>Connecting…</span></span>
+    <button class="icon-btn" id="btnSettings" aria-label="Field settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.5l2.1 1.2M17.7 15.3l2.1 1.2M4.2 16.5l2.1-1.2M17.7 8.7l2.1-1.2"/></svg></button>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ======================= ANALYZE ======================= -->
+  <section class="analyze" id="viewAnalyze" role="tabpanel" aria-labelledby="tabAnalyze">
+    <div class="film">
+      <div class="stage" id="stage">
+        <video id="video" playsinline muted preload="auto" hidden></video>
+        <canvas class="ov" id="overlay" hidden></canvas>
+        <div class="drop" id="drop">
+          <div>
+            <svg class="diamond" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 92 L8 50 L50 8 L92 50 Z" fill="none" stroke="#9fc5aa" stroke-width="2"/><path d="M50 92 L14 56 A51 51 0 0 1 86 56 Z" fill="rgba(217,185,154,.25)"/><circle cx="50" cy="56" r="4" fill="#d9b99a"/><rect x="46" y="88" width="8" height="8" fill="#eef3ef"/><rect x="84" y="46" width="7" height="7" fill="#eef3ef" transform="rotate(45 87.5 49.5)"/><rect x="46.5" y="4.5" width="7" height="7" fill="#eef3ef" transform="rotate(45 50 8)"/><rect x="5" y="46" width="7" height="7" fill="#eef3ef" transform="rotate(45 8.5 49.5)"/></svg>
+            <h2>Drop game clips here</h2>
+            <p>GameChanger play clips or screen recordings, one swing each. Videos stay on this device; only the swing measurements and the result are saved.</p>
+            <label class="btn primary" for="file">Choose clips</label>
+            <input type="file" id="file" accept="video/*" multiple hidden>
+          </div>
+        </div>
+        <div class="hint" id="hint" hidden></div>
+        <div class="progress" id="progress" hidden><span id="progText">Working…</span><button id="btnStop" type="button">Stop</button><div class="bar"><i id="progBar"></i></div></div>
+      </div>
+      <div class="transport" id="transport" hidden>
+        <button class="btn small" id="btnPlay" type="button" aria-label="Play">Play</button>
+        <button class="btn small ghost" id="btnBack" type="button" aria-label="Back one frame">◀ Frame</button>
+        <button class="btn small ghost" id="btnFwd" type="button" aria-label="Forward one frame">Frame ▶</button>
+        <button class="btn small ghost" id="btnReplay" type="button" hidden>Replay swing</button>
+        <button class="btn small ghost" id="btnZoom" type="button" aria-pressed="false" hidden>Zoom on batter</button>
+        <button class="btn small ghost" id="btnRange" type="button" hidden>Whole clip</button>
+        <span class="t num" id="clock">0.00 / 0.00</span>
+        <div class="sp" role="group" aria-label="Playback speed">
+          <button type="button" data-rate="0.25" aria-pressed="false">¼×</button>
+          <button type="button" data-rate="0.5" aria-pressed="false">½×</button>
+          <button type="button" data-rate="1" aria-pressed="true">1×</button>
+        </div>
+      </div>
+      <canvas class="tl" id="timeline" height="58" hidden aria-label="Clip timeline: click to move the playhead"></canvas>
+      <div class="queue" id="queue"></div>
+    </div>
+
+    <aside class="card" id="card">
+      <!-- intro (no clip yet) -->
+      <section class="panel" id="pIntro">
+        <div class="panel-h"><h2>How it works</h2></div>
+        <ol class="howto">
+          <li><div><b>Drop in a clip and tap the batter</b><span id="howStep1">Claude reads the GameChanger scoreboard so the at-bat is filed under the right hitter.</span></div></li>
+          <li><div><b>GS Baseball Scout tracks the swing</b><span>A pose model follows 17 points on the batter's body, finds leg lift, foot down, hip and shoulder turn, and looks for the ball off the bat.</span></div></li>
+          <li><div><b>It makes the call before you tag it</b><span>Pull, middle or opposite field, from that hitter's history and from swings that looked like this one.</span></div></li>
+          <li><div><b>Tap where the ball went</b><span>Every tagged at-bat sharpens the spray chart, the defensive positioning and the next prediction.</span></div></li>
+        </ol>
+        <div class="sublabel">Latest at-bats</div>
+        <div id="recent"><p class="empty">Nothing saved yet. Tagged at-bats from everyone on your team show up here.</p></div>
+        <p class="small muted" style="margin:14px 0 0">Pose model: MoveNet Thunder (Google, Apache 2.0) on TensorFlow.js, running in your browser.</p>
+      </section>
+
+      <!-- 1. batter -->
+      <section class="panel" id="pBatter" hidden>
+        <div class="panel-h"><span class="step">1</span><h2>Batter</h2><span class="aside" id="clipName"></span></div>
+        <div class="bgrid">
+          <label class="f c4">Name<input id="bName" list="rosterList" autocomplete="off" placeholder="e.g. M Eubanks"></label>
+          <label class="f c2">Number<input id="bNum" inputmode="numeric" placeholder="#"></label>
+          <label class="f c2">Team<input id="bTeam" list="teamList" autocomplete="off" placeholder="e.g. GRGS"></label>
+          <label class="f c2">Count<input id="bCount" placeholder="1-0"></label>
+          <label class="f c2">Inning<input id="bInning" placeholder="Bot 6"></label>
+          <label class="f c6">Game<input id="bGame" placeholder="Date and opponent"></label>
+        </div>
+        <div class="sublabel">Bats</div>
+        <div class="seg" role="group" aria-label="Bats" id="bBats">
+          <button type="button" data-v="R" aria-pressed="false">Right</button>
+          <button type="button" data-v="L" aria-pressed="false">Left</button>
+          <button type="button" data-v="S" aria-pressed="false">Switch</button>
+        </div>
+        <span id="bSideWrap" hidden> <span class="small muted" style="margin:0 6px">this at-bat</span>
+          <span class="seg" role="group" aria-label="Side this at-bat" id="bSide"><button type="button" data-v="R" aria-pressed="false">R</button><button type="button" data-v="L" aria-pressed="false">L</button></span></span>
+        <div class="status" id="bStatus"><span class="dot"></span><span></span></div>
+        <datalist id="rosterList"></datalist><datalist id="teamList"></datalist>
+      </section>
+
+      <!-- 2. swing -->
+      <section class="panel" id="pSwing" hidden>
+        <div class="panel-h"><span class="step">2</span><h2>Swing</h2><span class="aside" id="swingAside"></span></div>
+        <div id="swingBody"></div>
+      </section>
+
+      <!-- 3. call + result -->
+      <section class="panel" id="pCall" hidden>
+        <div class="panel-h"><span class="step">3</span><h2>The call</h2><span class="aside" id="callAside"></span></div>
+        <div id="callBody"></div>
+        <div class="fieldbox tap" id="tagField"></div>
+        <div class="legend" id="tagLegend"></div>
+        <div class="sublabel">Batted ball</div>
+        <div class="chips" id="typeChips"></div>
+        <div class="sublabel">Result</div>
+        <div class="chips" id="resultChips"></div>
+        <div class="sublabel">Not in play</div>
+        <div class="chips" id="npChips"></div>
+        <div class="actions">
+          <button class="btn primary" id="btnSave" type="button" disabled>Save at-bat</button>
+          <button class="btn ghost" id="btnNext" type="button" hidden>Next clip</button>
+          <span class="small muted" id="saveNote"></span>
+        </div>
+      </section>
+    </aside>
+  </section>
+
+  <!-- ======================= HITTERS ======================= -->
+  <section class="hitters" id="viewHitters" role="tabpanel" aria-labelledby="tabHitters" hidden>
+    <div class="record" id="record"></div>
+    <div class="hlist">
+      <input type="search" id="hSearch" placeholder="Find a hitter" aria-label="Find a hitter">
+      <div class="chips" id="teamChips"></div>
+      <div class="rows" id="hRows"></div>
+    </div>
+    <div class="detail" id="hDetail"></div>
+  </section>
+</main>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script type="module">
+import { EDGES, analyzeSwing, waitFrame, packFrames, unpackFrames } from './swing.js';
+import * as M from './model.js';
+
+// ======================================================================= state
+const $ = (id) => document.getElementById(id);
+const S = {
+  db: null, user: null, sample: null, uid: null, canWrite: true, dbState: 'connecting',
+  atbats: [], hitters: {}, field: { basePath: 60, fence: 200, ourTeam: '' },
+  queue: [], qi: -1, url: null,
+  seed: null, analysis: null, abort: null, pose: null, posePromise: null, poseProgress: 0,
+  batter: { name: '', number: '', team: '', bats: '', side: '', count: '', inning: '', game: '' },
+  autoFilled: new Set(),
+  tag: { x: null, y: null, type: null, result: null, kind: null },
+  prediction: null, predFrozen: false, savedId: null, live: null,
+  view: 'analyze', selHitter: null, hFilter: 'all', hMode: 'spray', hQuery: '',
+};
+const video = $('video'), overlay = $('overlay'), octx = overlay.getContext('2d');
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('swingscout.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('swingscout.' + k, JSON.stringify(v)); } catch {} },
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const slug = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+const hitterKey = (b) => [slug(b.team) || 'team', slug(b.number) || 'x', slug(b.name) || 'unknown'].join('-');
+const fmtS = (v, d = 2) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(d));
+const pct = (v) => (v == null || !Number.isFinite(v) ? '—' : Math.round(v * 100) + '%');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function toast(msg, ms = 2800) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, ms); }
+const today = () => new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const batsFor = (b) => (b.bats === 'S' ? b.side : b.bats);
+
+// ======================================================================= capabilities
+async function initCaps() {
+  const C = window.claude;
+  if (!C || !C.use) return initStandalone();
+  const use = (n) => (C && C.use ? C.use(n).catch(() => null) : Promise.resolve(null));
+  const [db, user, sample] = await Promise.all([use('db'), use('user'), use('sample')]);
+  S.sample = sample;
+  S.user = user;
+  if (user) {
+    try { S.uid = await user.id(); } catch { S.uid = null; }
+    try { const w = await user.can('data.write'); if (w === false) S.canWrite = false; } catch {}
+  }
+  if (!db) { S.dbState = 'off'; renderSync(); renderAll(); return; }
+  S.db = db;
+  S.dbState = 'on'; renderSync();
+  subscribe(db);
+}
+// Outside Claude (e.g. GitHub Pages): keep everything in this browser
+async function initStandalone() {
+  S.standalone = true;
+  $('howStep1').textContent = 'Type the batter’s name, number and team from the GameChanger scoreboard so the at-bat is filed under the right hitter.';
+  try {
+    const { createLocalDB } = await import('./store-local.js');
+    const db = await createLocalDB();
+    S.db = db; S.dbState = db.persistent ? 'local' : 'memory';
+    renderSync(); subscribe(db);
+  } catch (e) { console.error(e); S.dbState = 'off'; renderSync(); renderAll(); }
+}
+function subscribe(db) {
+  db.collection('atbats').orderBy('createdAt', 'desc').limit(1000).onSnapshot((snap) => {
+    S.atbats = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderAll();
+  }, () => { S.dbState = 'off'; renderSync(); });
+  db.collection('hitters').limit(1000).onSnapshot((snap) => {
+    const h = {}; for (const d of snap.docs) h[d.id] = { key: d.id, ...d.data() };
+    S.hitters = h; renderRoster(); renderAll();
+  }, () => {});
+  db.doc('config/field').onSnapshot((d) => {
+    if (d.exists) S.field = { ...S.field, ...d.data() };
+    renderAll();
+  }, () => {});
+}
+function renderSync() {
+  const el = $('sync');
+  const on = (S.dbState === 'on' && S.canWrite) || S.dbState === 'local';
+  el.className = 'sync ' + (on ? 'on' : S.dbState === 'connecting' ? '' : 'off');
+  el.lastElementChild.textContent = { on: S.canWrite ? 'Shared with your team' : 'View only', local: 'Saved on this device', memory: 'Not saving (private window?)', off: 'Not saving in this view', connecting: 'Connecting…' }[S.dbState] || '';
+}
+
+// ======================================================================= tabs
+function setView(v) {
+  S.view = v;
+  $('tabAnalyze').setAttribute('aria-selected', v === 'analyze');
+  $('tabHitters').setAttribute('aria-selected', v === 'hitters');
+  $('viewAnalyze').hidden = v !== 'analyze';
+  $('viewHitters').hidden = v !== 'hitters';
+  if (v === 'hitters') renderHitters();
+  if (v === 'analyze') requestAnimationFrame(sizeOverlay);
+}
+$('tabAnalyze').onclick = () => setView('analyze');
+$('tabHitters').onclick = () => setView('hitters');
+if (location.hash === '#hitters') setView('hitters');
+
+// ======================================================================= clips
+$('file').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((ev) => $('stage').addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((ev) => $('stage').addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+$('stage').addEventListener('drop', (e) => { const f = [...(e.dataTransfer?.files || [])].filter((x) => x.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(x.name)); if (f.length) addFiles(f); });
+
+function addFiles(files) {
+  if (!files.length) return;
+  for (const f of files) S.queue.push({ file: f, status: 'new' });
+  renderQueue();
+  if (S.qi < 0 || S.queue[S.qi].status === 'saved' || S.queue[S.qi].status === 'skipped') openClip(S.queue.length - files.length);
+  ensurePose().catch(() => {});
+}
+function renderQueue() {
+  const q = $('queue');
+  if (S.queue.length < 2) { q.innerHTML = ''; return; }
+  q.innerHTML = S.queue.map((it, i) => `<button type="button" class="qchip ${i === S.qi ? 'cur' : ''} ${it.status}" data-i="${i}" title="${esc(it.file.name)}"><i></i><span>${esc(it.file.name)}</span></button>`).join('')
+    + `<label class="qchip" for="file" style="cursor:pointer"><span>+ Add clips</span></label>`;
+  q.querySelectorAll('button[data-i]').forEach((b) => (b.onclick = () => openClip(+b.dataset.i)));
+}
+
+async function openClip(i) {
+  if (S.abort) S.abort.abort();
+  S.qi = i;
+  const it = S.queue[i];
+  if (S.url) URL.revokeObjectURL(S.url);
+  S.url = URL.createObjectURL(it.file);
+  resetClipState();
+  video.hidden = false; overlay.hidden = false; drop.hidden = true;
+  $('transport').hidden = false; $('timeline').hidden = false;
+  $('pIntro').hidden = true; $('pBatter').hidden = false; $('pSwing').hidden = false; $('pCall').hidden = true;
+  $('clipName').textContent = it.file.name;
+  renderQueue();
+  video.src = S.url;
+  video.load();
+  try {
+    await new Promise((res, rej) => {
+      const ok = () => { cleanup(); res(); }, bad = () => { cleanup(); rej(new Error('decode')); };
+      const cleanup = () => { video.removeEventListener('loadeddata', ok); video.removeEventListener('error', bad); };
+      video.addEventListener('loadeddata', ok); video.addEventListener('error', bad);
+    });
+  } catch {
+    setHint(null);
+    renderSwingPanel('This browser could not open that video. Try an .mp4 clip, or open the page in Chrome or Safari.');
+    return;
+  }
+  $('stage').style.aspectRatio = String(clamp(video.videoWidth / video.videoHeight, 4 / 3, 2.4));
+  await new Promise((r) => requestAnimationFrame(r));
+  sizeOverlay();
+  const t0 = Math.min(0.5, video.duration / 3);
+  await waitFrame(video, t0);
+  startTapMode();
+  readScoreboard();
+  draw();
+}
+
+function resetClipState() {
+  S.seed = null; S.analysis = null; S.prediction = null; S.predFrozen = false; S.savedId = null; S.live = null; S.thumbFrame = null;
+  S.tag = { x: null, y: null, type: null, result: null, kind: null };
+  S.autoFilled.clear();
+  Object.assign(S.batter, { name: '', number: '', bats: '', side: '', count: '', inning: '' });
+  S.batter.game = S.batter.game || store.get('game', '');
+  fillBatterInputs();
+  $('btnReplay').hidden = true; $('btnZoom').hidden = true; $('btnRange').hidden = true;
+  S.zoom = null; S.tlSwing = false; video.style.transform = '';
+  $('saveNote').textContent = '';
+}
+
+// ======================================================================= transport + timeline
+const btnPlay = $('btnPlay');
+btnPlay.onclick = () => { if (video.paused) { video.play(); } else video.pause(); };
+video.addEventListener('play', () => { btnPlay.textContent = 'Pause'; loop(); });
+video.addEventListener('pause', () => { btnPlay.textContent = 'Play'; draw(); });
+video.addEventListener('seeked', draw);
+video.addEventListener('timeupdate', () => { if (video.paused) draw(); });
+$('btnBack').onclick = () => { video.pause(); video.currentTime = Math.max(0, video.currentTime - 1 / 30); };
+$('btnFwd').onclick = () => { video.pause(); video.currentTime = Math.min(video.duration, video.currentTime + 1 / 30); };
+document.querySelectorAll('.sp button').forEach((b) => (b.onclick = () => {
+  video.playbackRate = +b.dataset.rate;
+  document.querySelectorAll('.sp button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+}));
+$('btnZoom').onclick = () => setZoom(!(S.zoom && S.zoom.on));
+$('btnRange').onclick = () => { S.tlSwing = !S.tlSwing; $('btnRange').textContent = S.tlSwing ? 'Whole clip' : 'Swing only'; drawTimeline(); };
+$('btnReplay').onclick = () => {
+  const a = S.analysis; if (!a) return;
+  const e = a.events, start = Math.max(0, (e.tLift ?? e.tRot - 0.6) - 0.3), end = Math.min(video.duration, e.tContact + 0.9);
+  video.playbackRate = 0.25;
+  document.querySelectorAll('.sp button').forEach((x) => x.setAttribute('aria-pressed', x.dataset.rate === '0.25'));
+  video.currentTime = start;
+  video.play();
+  const stop = () => { if (video.currentTime >= end) { video.pause(); video.removeEventListener('timeupdate', stop); } };
+  video.addEventListener('timeupdate', stop);
+};
+function loop() { draw(); if (!video.paused && !video.ended) requestAnimationFrame(loop); }
+
+const tl = $('timeline');
+function tlRange() { return S.tlSwing && S.analysis && S.analysis.frames.length ? [Math.max(0, S.analysis.frames[0].t - 0.25), Math.min(video.duration || 1e9, S.analysis.frames[S.analysis.frames.length - 1].t + 0.25)] : [0, video.duration || 1]; }
+function tlX(t) { const [a, b] = tlRange(); return 10 + ((t - a) / Math.max(1e-3, b - a)) * (tl.clientWidth - 20); }
+function drawTimeline() {
+  const dpr = window.devicePixelRatio || 1, w = tl.clientWidth, h = 58;
+  if (!w) return;
+  if (tl.width !== Math.round(w * dpr)) { tl.width = Math.round(w * dpr); tl.height = Math.round(h * dpr); }
+  const c = tl.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const col = (n) => css.getPropertyValue(n).trim();
+  const y = 38;
+  c.fillStyle = col('--surface-2'); c.fillRect(10, y - 3, w - 20, 6);
+  if (S.tlSwing && S.analysis) { c.fillStyle = col('--muted'); c.font = '600 10.5px ' + col('--body'); c.textAlign = 'left'; const [ra, rb] = tlRange(); c.fillText(ra.toFixed(1) + ' s', 10, 56); c.textAlign = 'right'; c.fillText(rb.toFixed(1) + ' s', w - 10, 56); }
+  const a = S.analysis;
+  if (a && a.frames.length) {
+    c.fillStyle = col('--pred-soft'); const x0 = tlX(a.frames[0].t), x1 = tlX(a.frames[a.frames.length - 1].t);
+    c.fillRect(x0, y - 8, Math.max(2, x1 - x0), 16);
+    const ev = [['Contact', a.events.tContact, col('--clay')], ['Leg lift', a.events.tLift, col('--muted')], ['Foot down', a.events.tDown, col('--muted')], ['Turn', a.events.tRot, col('--pred')]];
+    c.font = '600 10.5px ' + col('--body');
+    const placed = [[], []];
+    for (const [lab, t, color] of ev) {
+      if (t == null) continue;
+      const x = tlX(t);
+      c.fillStyle = color; c.fillRect(x - 1, y - 10, 2, 20);
+      const row = [0, 1].find((r) => placed[r].every((px) => Math.abs(px - x) > 58));
+      if (row != null) { c.textAlign = 'center'; c.fillText(lab, clamp(x, 26, w - 26), row ? 25 : 12); placed[row].push(x); }
+    }
+  }
+  if (S.seed) { c.fillStyle = col('--ink'); c.beginPath(); c.arc(tlX(S.seed.t), y, 3, 0, 7); c.fill(); }
+  const px = tlX(video.currentTime || 0);
+  c.fillStyle = col('--ink'); c.fillRect(px - 1, 20, 2, 32);
+  c.beginPath(); c.moveTo(px - 5, 18); c.lineTo(px + 5, 18); c.lineTo(px, 24); c.fill();
+  $('clock').textContent = `${(video.currentTime || 0).toFixed(2)} / ${(video.duration || 0).toFixed(2)} s`;
+}
+let tlDrag = false;
+const tlSeek = (e) => { const r = tl.getBoundingClientRect(); const [a, b] = tlRange(); const t = a + clamp((e.clientX - r.left - 10) / (r.width - 20), 0, 1) * (b - a); video.pause(); video.currentTime = t; };
+tl.addEventListener('pointerdown', (e) => { tlDrag = true; tl.setPointerCapture(e.pointerId); tlSeek(e); });
+tl.addEventListener('pointermove', (e) => { if (tlDrag) tlSeek(e); });
+tl.addEventListener('pointerup', () => { tlDrag = false; });
+
+// ======================================================================= overlay
+function sizeOverlay() {
+  const r = $('stage').getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (!r.width || !r.height) return;              // view hidden: size it when it is shown again
+  overlay.width = Math.round(r.width * dpr); overlay.height = Math.round(r.height * dpr);
+  applyZoomCSS();
+  draw();
+}
+window.addEventListener('resize', () => { sizeOverlay(); drawTimeline(); });
+function baseRect(cw, ch) {
+  const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+  const s = Math.min(cw / vw, ch / vh);
+  return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2 };
+}
+// mapping from video pixels to a box of size (cw, ch), including the batter zoom
+function mapping(cw, ch) {
+  const b = baseRect(cw, ch);
+  if (!S.zoom || !S.zoom.on) return { ...b, z: 1 };
+  const z = S.zoom.z, vw = video.videoWidth, vh = video.videoHeight;
+  let fx = b.ox + S.zoom.x * b.s, fy = b.oy + S.zoom.y * b.s;
+  const hx = cw / 2 / z, hy = ch / 2 / z;
+  const minx = b.ox + hx, maxx = b.ox + vw * b.s - hx, miny = b.oy + hy, maxy = b.oy + vh * b.s - hy;
+  fx = minx <= maxx ? clamp(fx, minx, maxx) : b.ox + vw * b.s / 2;
+  fy = miny <= maxy ? clamp(fy, miny, maxy) : b.oy + vh * b.s / 2;
+  return { s: b.s * z, ox: cw / 2 + (b.ox - fx) * z, oy: ch / 2 + (b.oy - fy) * z, z, fx, fy };
+}
+const vrect = () => mapping(overlay.width, overlay.height);
+function applyZoomCSS() {
+  const r = $('stage').getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const m = mapping(r.width, r.height), b = baseRect(r.width, r.height);
+  if (m.z === 1) { video.style.transform = ''; return; }
+  // css: X' = tx + X*z with X the unzoomed element position
+  const tx = m.ox - b.ox * m.z, ty = m.oy - b.oy * m.z;
+  video.style.transformOrigin = '0 0';
+  video.style.transform = `translate(${tx}px, ${ty}px) scale(${m.z})`;
+}
+function setZoom(on) {
+  if (on && !S.zoom) return;
+  if (S.zoom) S.zoom.on = on;
+  $('btnZoom').setAttribute('aria-pressed', !!on);
+  $('btnZoom').textContent = on ? 'Show whole field' : (S.analysis ? 'Zoom on batter' : 'Zoom in');
+  applyZoomCSS(); draw();
+}
+function zoomToBatter(frame, H) {
+  const kp = frame.kp; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < 17; k++) if (kp[k * 3 + 2] > 0.2) { x0 = Math.min(x0, kp[k * 3]); x1 = Math.max(x1, kp[k * 3]); y0 = Math.min(y0, kp[k * 3 + 1]); y1 = Math.max(y1, kp[k * 3 + 1]); }
+  if (!Number.isFinite(x0)) return;
+  const r = $('stage').getBoundingClientRect(), b = baseRect(r.width, r.height);
+  const z = clamp((r.height * 0.62) / (Math.max(y1 - y0, H * 0.9) * b.s), 1.4, 5);
+  S.zoom = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 - (y1 - y0) * 0.35, z, on: true };
+  $('btnZoom').hidden = false;
+  setZoom(true);
+}
+const toScreen = (x, y, r) => [r.ox + x * r.s, r.oy + y * r.s];
+function nearestFrame(frames, t, tol = 0.06) {
+  let best = null, bd = tol;
+  for (const f of frames) { const d = Math.abs(f.t - t); if (d < bd) { bd = d; best = f; } }
+  return best;
+}
+function drawSkeleton(kp, r, color, width) {
+  octx.lineCap = 'round'; octx.lineWidth = width; octx.strokeStyle = color;
+  for (const [a, b] of EDGES) {
+    if (kp[a * 3 + 2] < 0.15 || kp[b * 3 + 2] < 0.15) continue;
+    const p = toScreen(kp[a * 3], kp[a * 3 + 1], r), q = toScreen(kp[b * 3], kp[b * 3 + 1], r);
+    octx.beginPath(); octx.moveTo(p[0], p[1]); octx.lineTo(q[0], q[1]); octx.stroke();
+  }
+  octx.fillStyle = '#fff';
+  for (let k = 5; k < 17; k++) {
+    if (kp[k * 3 + 2] < 0.15) continue;
+    const p = toScreen(kp[k * 3], kp[k * 3 + 1], r);
+    octx.beginPath(); octx.arc(p[0], p[1], width * 0.6, 0, 7); octx.fill();
+  }
+  let hx = 0, hy = 0, n = 0;
+  for (let k = 0; k < 5; k++) if (kp[k * 3 + 2] > 0.2) { hx += kp[k * 3]; hy += kp[k * 3 + 1]; n++; }
+  if (n) { const p = toScreen(hx / n, hy / n, r); octx.beginPath(); octx.arc(p[0], p[1], width * 2.4, 0, 7); octx.strokeStyle = color; octx.lineWidth = width * 0.7; octx.stroke(); }
+}
+function draw() {
+  drawTimeline();
+  if (overlay.hidden) return;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!video.videoWidth) return;
+  const r = vrect(), dpr = window.devicePixelRatio || 1, t = video.currentTime;
+  const Hs = ((S.analysis && S.analysis.H) || 160) * r.s;
+  const lw = clamp(Hs / 24, 1.4 * dpr, 5 * dpr);
+  if (S.live) {
+    const { box, kp } = S.live;
+    if (box) {
+      const p = toScreen(box.cx - box.size / 2, box.cy - box.size / 2, r);
+      octx.strokeStyle = 'rgba(255,179,143,.9)'; octx.lineWidth = 1.5 * dpr; octx.setLineDash([6 * dpr, 4 * dpr]);
+      octx.strokeRect(p[0], p[1], box.size * r.s, box.size * r.s); octx.setLineDash([]);
+    }
+    if (kp) drawSkeleton(kp, r, 'rgba(64, 211, 190, .95)', lw);
+    return;
+  }
+  const a = S.analysis;
+  if (a) {
+    const f = nearestFrame(a.frames, t);
+    if (f) drawSkeleton(f.kp, r, 'rgba(64, 211, 190, .95)', lw);
+    if (a.ball && a.ball.found) {
+      const pts = a.ball.track.filter((p) => p.t <= t + 0.01 && t - p.t < 1.4);
+      pts.forEach((p, i) => {
+        const q = toScreen(p.x, p.y, r);
+        octx.fillStyle = `rgba(255, 196, 61, ${0.35 + 0.65 * (i + 1) / pts.length})`;
+        octx.beginPath(); octx.arc(q[0], q[1], (i === pts.length - 1 ? 5 : 3) * dpr, 0, 7); octx.fill();
+      });
+    }
+    const e = a.events;
+    if (Math.abs(t - e.tContact) < 0.045) label('CONTACT', '#ff8a5c', r);
+    else if (e.tDown != null && Math.abs(t - e.tDown) < 0.03) label('FOOT DOWN', '#cfe2d2', r);
+    else if (e.tLift != null && Math.abs(t - e.tLift) < 0.03) label('LEG LIFT', '#cfe2d2', r);
+  }
+  if (S.seed && (!a || $('stage').classList.contains('tapping'))) {
+    const p = toScreen(S.seed.x, S.seed.y, r);
+    octx.strokeStyle = '#ffb38f'; octx.lineWidth = 2.5 * dpr;
+    octx.beginPath(); octx.arc(p[0], p[1], 16 * dpr, 0, 7); octx.stroke();
+    octx.beginPath(); octx.moveTo(p[0] - 24 * dpr, p[1]); octx.lineTo(p[0] - 8 * dpr, p[1]); octx.moveTo(p[0] + 8 * dpr, p[1]); octx.lineTo(p[0] + 24 * dpr, p[1]);
+    octx.moveTo(p[0], p[1] - 24 * dpr); octx.lineTo(p[0], p[1] - 8 * dpr); octx.moveTo(p[0], p[1] + 8 * dpr); octx.lineTo(p[0], p[1] + 24 * dpr); octx.stroke();
+  }
+}
+function label(text, color, r) {
+  const dpr = window.devicePixelRatio || 1;
+  octx.font = `800 ${Math.round(15 * dpr)}px "Big Shoulders Display", sans-serif`;
+  const w = octx.measureText(text).width + 18 * dpr;
+  octx.fillStyle = 'rgba(11,18,14,.8)'; octx.fillRect(12 * dpr, overlay.height - 40 * dpr, w, 26 * dpr);
+  octx.fillStyle = color; octx.fillText(text, 21 * dpr, overlay.height - 21 * dpr);
+}
+
+// ======================================================================= tapping the batter
+function setHint(html) { const h = $('hint'); if (!html) { h.hidden = true; return; } h.innerHTML = html; h.hidden = false; }
+function startTapMode() {
+  $('stage').classList.add('tapping');
+  const last = store.get('seed', null);
+  if (last && !S.seed) {
+    S.seed = { x: last.x * video.videoWidth, y: last.y * video.videoHeight, t: video.currentTime, remembered: true };
+  }
+  const small = $('stage').getBoundingClientRect().width < 640;
+  setHint(S.seed ? 'Tap the <b>batter</b> to move the marker, then press Analyze' : small ? 'Tap near the <b>batter</b> to zoom in' : 'Pause on a frame before the pitch and tap the <b>batter</b>');
+  renderSwingPanel();
+  draw();
+}
+overlay.addEventListener('click', (e) => {
+  if (!$('stage').classList.contains('tapping') || S.abort) return;
+  const rect = overlay.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, r = vrect();
+  const x = ((e.clientX - rect.left) * dpr - r.ox) / r.s, y = ((e.clientY - rect.top) * dpr - r.oy) / r.s;
+  if (x < 0 || y < 0 || x > video.videoWidth || y > video.videoHeight) return;
+  video.pause();
+  // on a small screen the batter is tiny: the first tap zooms in, the second one marks
+  if (rect.width < 640 && !(S.zoom && S.zoom.on)) {
+    S.zoom = { x, y, z: 3, on: true };
+    $('btnZoom').hidden = false; setZoom(true);
+    setHint('Now tap the <b>batter</b>');
+    return;
+  }
+  S.seed = { x, y, t: video.currentTime };
+  setHint('Batter marked. Press <b>Analyze swing</b>');
+  renderSwingPanel();
+  draw();
+});
+
+// ======================================================================= pose model
+// TensorFlow.js 4.22.0 from a public CDN (same build the pose engine was verified against)
+const TF_URLS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js',
+  'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js',
+  'https://unpkg.com/@tensorflow/tfjs@4.22.0/dist/tf.min.js',
+];
+async function loadTF() {
+  if (window.tf && window.tf.fused) return window.tf;
+  for (const u of TF_URLS) {
+    try {
+      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = u; s.async = true; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+      if (window.tf && window.tf.fused) return window.tf;
+    } catch {}
+  }
+  throw new Error('TensorFlow.js could not be loaded');
+}
+function ensurePose() {
+  if (S.pose) return Promise.resolve(S.pose);
+  if (!S.posePromise) {
+    S.posePromise = (async () => {
+      const tf = await loadTF();
+      try { if (!(await tf.setBackend('webgl'))) await tf.setBackend('cpu'); } catch { await tf.setBackend('cpu'); }
+      await tf.ready();
+      const { loadPose } = await import('./pose.js');
+      const pose = await loadPose(tf, './model/', (p) => { S.poseProgress = p; if (S.abort) progress('Loading the pose model (first time only)', p); });
+      S.pose = pose;
+      return pose;
+    })();
+    S.posePromise.catch(() => { S.posePromise = null; });
+  }
+  return S.posePromise;
+}
+function progress(text, p) {
+  $('progress').hidden = false; $('progText').textContent = text; $('progBar').style.width = Math.round(clamp(p, 0, 1) * 100) + '%';
+}
+$('btnStop').onclick = () => { if (S.abort) S.abort.abort(); };
+
+async function runAnalysis(hint) {
+  if (!S.seed || S.abort) return;
+  const ctl = new AbortController(); S.abort = ctl;
+  video.pause();
+  $('stage').classList.remove('tapping'); setHint(null);
+  S.analysis = null; S.prediction = null; S.predFrozen = false; renderCall();
+  renderSwingPanel();
+  try {
+    progress('Loading the pose model (first time only)', S.poseProgress);
+    const pose = await ensurePose();
+    if (ctl.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+    const res = await analyzeSwing({
+      video, pose, seed: S.seed, signal: ctl.signal, hint,
+      onProgress: (p) => { progress(p.stage + '…', p.p); if (p.kp || p.box) { S.live = { kp: p.kp, box: p.box }; draw(); } },
+    });
+    S.live = null;
+    if (res.error) {
+      const msg = {
+        no_batter: 'No player found where you tapped. Pause on a frame where the batter is clear of the catcher and tap the middle of their body.',
+        lost_batter: 'Lost track of the batter partway through. Tap the batter again on a frame closer to the pitch.',
+        no_swing: 'No swing found, so this looks like a take. Tag it as “Took the pitch”, or move the playhead to the swing and use “Analyze near the playhead”.',
+      }[res.error] || 'Something went wrong while tracking.';
+      startTapMode();
+      renderSwingPanel(msg);
+      if (res.error === 'no_swing') { showCallForTake(); }
+      return;
+    }
+    await applyAnalysis(res);
+  } catch (e) {
+    S.live = null;
+    if (e && e.name === 'AbortError') { startTapMode(); renderSwingPanel('Stopped.'); }
+    else { console.error(e); startTapMode(); renderSwingPanel('The pose model could not run here (' + esc(e && e.message || e) + '). WebGL is needed; try Chrome or Safari.'); }
+  } finally {
+    S.abort = null; $('progress').hidden = true; draw();
+  }
+}
+
+async function applyAnalysis(res) {
+  S.analysis = res;
+  if (S.seed) store.set('seed', { x: S.seed.x / video.videoWidth, y: S.seed.y / video.videoHeight });
+  $('stage').classList.remove('tapping'); setHint(null);
+  makeThumb();
+  $('btnReplay').hidden = false;
+  S.tlSwing = true; $('btnRange').hidden = false; $('btnRange').textContent = 'Whole clip';
+  zoomToBatter(res.frames.reduce((b, f) => (Math.abs(f.t - res.events.tContact) < Math.abs(b.t - res.events.tContact) ? f : b), res.frames[0]), res.H);
+  renderSwingPanel();
+  computePrediction();
+  $('pCall').hidden = false;
+  renderCall();
+  await waitFrame(video, Math.max(0, res.events.tContact - 0.02));
+  draw();
+}
+// test hook (harmless in production): lets automated checks replay a stored analysis
+window.__swingScout = { S, applyAnalysis, renderAll };
+
+function makeThumb() {
+  const a = S.analysis; if (!a) return;
+  const f = a.frames.reduce((b, x) => (Math.abs(x.t - a.events.tContact) < Math.abs(b.t - a.events.tContact) ? x : b), a.frames[0]);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < 17; k++) if (f.kp[k * 3 + 2] > 0.2) { x0 = Math.min(x0, f.kp[k * 3]); x1 = Math.max(x1, f.kp[k * 3]); y0 = Math.min(y0, f.kp[k * 3 + 1]); y1 = Math.max(y1, f.kp[k * 3 + 1]); }
+  if (!Number.isFinite(x0)) return;
+  const size = Math.max(x1 - x0, y1 - y0) * 1.9, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  S.thumbFrame = { t: f.t, cx, cy, size };
+}
+async function captureThumb() {
+  const tf = S.thumbFrame; if (!tf) return null;
+  const keep = video.currentTime;
+  await waitFrame(video, tf.t);
+  const c = document.createElement('canvas'); c.width = c.height = 240;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 240, 240);
+  const sx = tf.cx - tf.size / 2, sy = tf.cy - tf.size / 2;
+  const vx0 = Math.max(0, sx), vy0 = Math.max(0, sy), vx1 = Math.min(video.videoWidth, sx + tf.size), vy1 = Math.min(video.videoHeight, sy + tf.size);
+  const k = 240 / tf.size;
+  ctx.drawImage(video, vx0, vy0, vx1 - vx0, vy1 - vy0, (vx0 - sx) * k, (vy0 - sy) * k, (vx1 - vx0) * k, (vy1 - vy0) * k);
+  await waitFrame(video, keep);
+  try { return c.toDataURL('image/jpeg', 0.72); } catch { return null; }
+}
+
+// ======================================================================= scoreboard (Claude)
+const SCORE_PROMPT = `This image is the top-left part of one frame of a youth baseball video recorded with the GameChanger app. Read the scoreboard overlay if there is one.
+Reply with only a JSON object in exactly this shape:
+{"found": true, "batter": {"name": "M Eubanks", "number": "1", "line": "1 for 2"}, "pitcher": {"name": "T M", "number": "5", "pitches": 63}, "count": "1-0", "outs": 0, "inning": 6, "half": "bottom", "teams": [{"abbr": "VPRM", "runs": 9, "batting": false}, {"abbr": "GRGS", "runs": 5, "batting": true}]}
+(Those values are only an example of the format.) The batter's row shows a name, #number and a line like "1 for 2"; the pitcher's row shows "P:" and a pitch count. A small dot beside a team abbreviation marks the team at bat. A down-pointing triangle by the inning number means the bottom half, up-pointing means the top. Use null for anything you cannot read, and {"found": false} if there is no scoreboard.`;
+async function readScoreboard() {
+  setBStatus('', false);
+  if (!S.sample) { setBStatus(S.standalone ? 'Type the batter in from the scoreboard. Names you have saved before autocomplete.' : 'Type the batter in. (Reading the scoreboard needs Claude, which this view does not have.)'); return; }
+  const lim = await S.sample.limits().catch(() => null);
+  if (!lim || !lim.images) { setBStatus('Type the batter in. (This view cannot send images to Claude.)'); return; }
+  setBStatus('Claude is reading the scoreboard…', true);
+  const qi = S.qi;
+  try {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const c = document.createElement('canvas'); const w = Math.round(vw * 0.55), h = Math.round(vh * 0.45);
+    const sc = Math.min(1, 1600 / w); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+    c.getContext('2d').drawImage(video, 0, 0, w, h, 0, 0, c.width, c.height);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
+    const data = await S.sample.json(SCORE_PROMPT, { images: blob, modelTier: 'quick' });
+    if (qi !== S.qi) return;
+    if (!data || data.found === false || !data.batter || !data.batter.name) { setBStatus('No GameChanger scoreboard found in this clip. Type the batter in.'); return; }
+    const teams = Array.isArray(data.teams) ? data.teams : [];
+    const bat = teams.find((t) => t && t.batting) || null;
+    const other = teams.find((t) => t && t !== bat && t.abbr) || null;
+    const fill = (k, v) => { if (v == null || v === '') return; if (!S.batter[k] || S.autoFilled.has(k)) { S.batter[k] = String(v); S.autoFilled.add(k); } };
+    fill('name', String(data.batter.name).trim());
+    fill('number', data.batter.number != null ? String(data.batter.number).replace(/^#/, '') : '');
+    if (bat && bat.abbr) fill('team', bat.abbr);
+    if (data.count) fill('count', data.count);
+    if (data.inning) fill('inning', (data.half === 'top' ? 'Top ' : data.half === 'bottom' ? 'Bot ' : '') + data.inning);
+    if ((!S.batter.game || S.autoFilled.has('game')) && other && other.abbr) { S.batter.game = `vs ${other.abbr}`; S.autoFilled.add('game'); }
+    matchHitter();
+    fillBatterInputs();
+    setBStatus(`Read from the scoreboard by Claude${data.batter.line ? ' · ' + esc(data.batter.line) + ' so far' : ''}. Check it before saving.`);
+  } catch (e) {
+    if (qi !== S.qi) return;
+    const code = e && e.code;
+    setBStatus(code === 'not_granted' ? 'Claude is not allowed in this view. Type the batter in.' : code === 'rate_limited' ? 'Claude is busy right now. Type the batter in.' : 'Could not read the scoreboard. Type the batter in.');
+  }
+}
+function setBStatus(text, busy) { const el = $('bStatus'); el.classList.toggle('busy', !!busy); el.lastElementChild.innerHTML = text; el.hidden = !text; }
+
+// ======================================================================= batter panel
+const BF = { name: 'bName', number: 'bNum', team: 'bTeam', count: 'bCount', inning: 'bInning', game: 'bGame' };
+for (const [k, id] of Object.entries(BF)) {
+  $(id).addEventListener('input', () => {
+    S.batter[k] = $(id).value; S.autoFilled.delete(k);
+    if (k === 'game') store.set('game', S.batter.game);
+    if (k === 'name' || k === 'number' || k === 'team') matchHitter(k === 'name');
+    onBatterChange();
+  });
+}
+function segBind(id, key) {
+  $(id).querySelectorAll('button').forEach((b) => (b.onclick = () => { S.batter[key] = b.dataset.v; fillBatterInputs(); onBatterChange(); }));
+}
+segBind('bBats', 'bats'); segBind('bSide', 'side');
+function fillBatterInputs() {
+  for (const [k, id] of Object.entries(BF)) if ($(id).value !== S.batter[k]) $(id).value = S.batter[k] || '';
+  $('bBats').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === S.batter.bats));
+  $('bSideWrap').hidden = S.batter.bats !== 'S';
+  $('bSide').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === S.batter.side));
+}
+function matchHitter(fromName) {
+  const b = S.batter;
+  const list = Object.values(S.hitters);
+  let h = list.find((x) => x.key === hitterKey(b));
+  if (!h && b.name) h = list.find((x) => slug(x.name) === slug(b.name) && (!b.team || slug(x.team) === slug(b.team)));
+  if (!h && b.name && b.number) h = list.find((x) => slug(x.name) === slug(b.name));
+  if (h) {
+    if (!b.number || fromName) b.number = h.number || b.number;
+    if (!b.team || fromName) b.team = h.team || b.team;
+    if (!b.bats) b.bats = h.bats || '';
+    fillBatterInputs();
+  }
+}
+function onBatterChange() {
+  if (!S.predFrozen && S.analysis) { computePrediction(); }
+  renderCall();
+}
+function renderRoster() {
+  const hs = Object.values(S.hitters).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  $('rosterList').innerHTML = hs.map((h) => `<option value="${esc(h.name)}">#${esc(h.number)} ${esc(h.team)}</option>`).join('');
+  const teams = [...new Set(hs.map((h) => h.team).filter(Boolean))];
+  $('teamList').innerHTML = teams.map((t) => `<option value="${esc(t)}"></option>`).join('');
+}
+
+// ======================================================================= swing panel
+function renderSwingPanel(msg) {
+  const body = $('swingBody');
+  const a = S.analysis;
+  $('swingAside').textContent = a ? `contact ${a.events.tContact.toFixed(2)} s · ${a.events.contactSource === 'ball' ? 'from the ball' : 'estimated'}` : '';
+  if (!a) {
+    const busy = !!S.abort;
+    body.innerHTML = `
+      ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
+      <p class="small muted" style="margin:0 0 12px">${S.seed ? (S.seed.remembered ? 'The marker is where the batter stood in your last clip. Tap the video to move it.' : 'Batter marked.') : 'Tap the batter on the video. Any frame before the pitch works.'}</p>
+      <div class="actions" style="margin-top:0">
+        <button class="btn primary" id="btnAnalyze" type="button" ${S.seed && !busy ? '' : 'disabled'}>Analyze swing</button>
+        <button class="btn ghost small" id="btnAnalyzeHere" type="button" ${S.seed && !busy ? '' : 'disabled'} title="Use this if the clip has more than one swing">Analyze near the playhead</button>
+      </div>
+      ${!S.pose ? `<p class="small muted" style="margin:10px 0 0">The pose model (12.7 MB) downloads once, then runs on this device.</p>` : ''}`;
+    $('btnAnalyze').onclick = () => runAnalysis();
+    $('btnAnalyzeHere').onclick = () => runAnalysis(video.currentTime);
+    return;
+  }
+  const m = a.metrics, e = a.events;
+  const lead = m.hipLead;
+  const leadTxt = lead == null ? '—' : Math.abs(lead) < 0.035 ? 'Together' : lead > 0 ? 'Hips first' : 'Shoulders first';
+  const tiles = [
+    ['Leg lift → contact', fmtS(m.liftToContact), 's', 'Load and stride time'],
+    ['Foot down → contact', fmtS(m.downToContact), 's', 'How quick the swing is once planted'],
+    ['Hips vs shoulders', leadTxt, '', lead == null ? '' : `${Math.round(Math.abs(lead) * 1000)} ms apart`],
+    ['Shoulders open', pct(m.shoulderOpenAtContact), '', 'Turned toward the pitcher at contact'],
+    ['Head drift', pct(m.headDrift), '', 'Of body height, stance to contact'],
+    ['Stride', fmtS(m.stride), 'H', 'Front-foot travel in body heights'],
+  ];
+  const ball = a.ball;
+  const ballTxt = !ball || !ball.found ? 'Ball not picked up after contact. Tag where it went below.'
+    : `Ball tracked ${ball.track.length} frames off the bat${ball.air === true ? ', climbing: it was in the air' : ball.air === false ? ', staying low: on the ground' : ''}.`;
+  body.innerHTML = `
+    ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
+    <div class="metrics">${tiles.map(([k, v, u, d]) => `<div class="metric"><div class="k">${k}</div><div class="v num ${/^[0-9.—%-]+$/.test(v) ? '' : 'txt'}">${esc(v)}${u && v !== '—' ? `<small>${u}</small>` : ''}</div><div class="d">${esc(d)}</div></div>`).join('')}</div>
+    <p class="small" style="margin:12px 0 0">${esc(ballTxt)}</p>
+    <div class="actions"><button class="btn small" id="btnReplay2" type="button">Replay at ¼ speed</button><button class="btn ghost small" id="btnRetap" type="button">Wrong player or swing?</button></div>`;
+  $('btnReplay2').onclick = () => $('btnReplay').click();
+  $('btnRetap').onclick = () => { S.analysis = null; S.tlSwing = false; $('btnRange').hidden = true; setZoom(false); $('pCall').hidden = true; startTapMode(); };
+}
+
+// ======================================================================= prediction + tagging
+function computePrediction() {
+  const b = S.batter, a = S.analysis;
+  const key = hitterKey(b);
+  const feats = a ? M.featureVector({ metrics: a.metrics, events: a.events }) : null;
+  const others = S.atbats.filter((x) => x.id !== S.savedId);
+  const p = M.predict(others, key, feats);
+  p.baseline = M.baselinePick(others, key);
+  p.hitterName = b.name;
+  S.prediction = p;
+}
+function showCallForTake() {
+  $('pCall').hidden = false;
+  S.tag = { x: null, y: null, type: null, result: null, kind: 'take' };
+  renderCall();
+}
+function renderCall() {
+  if ($('pCall').hidden) return;
+  const bats = batsFor(S.batter);
+  const p = S.prediction;
+  const body = $('callBody');
+  if (!S.analysis) { body.innerHTML = '<p class="small muted" style="margin:0 0 8px">No swing to predict. Tag the pitch below.</p>'; $('callAside').textContent = ''; }
+  else if (!bats) {
+    body.innerHTML = '<p class="small" style="margin:0 0 8px">Pick which side the batter hits from (step 1) to see the call on the field.</p>';
+    $('callAside').textContent = '';
+  } else if (p) {
+    const zone = M.ZONES[p.best];
+    const sd = p.sides;
+    const basis = p.nHitter === 0 && p.similar < 0.3
+      ? 'No tagged at-bats for this hitter yet, so this starts from how young hitters usually spray the ball. It gets specific after a few tags.'
+      : `From ${p.nHitter} tagged at-bat${p.nHitter === 1 ? '' : 's'} by this hitter${p.similar >= 0.3 ? ` and ${p.similar.toFixed(1)} weight of similar-looking swings on the team` : ''}.`;
+    body.innerHTML = `<div class="call">
+      <div class="callline"><span class="big">${esc(M.ZONE_LABEL[zone])}</span><span class="pct num">${pct(p.dist[p.best])}</span><span class="flag pred">${p.confidence} confidence</span>${S.predFrozen ? '<span class="flag">locked in</span>' : ''}</div>
+      <div class="bars">${[['Pull side', sd.pull], ['Up the middle', sd.center], ['Opposite field', sd.oppo]].map(([l, v]) => `<div class="barrow"><span>${l}</span><span class="track"><i style="width:${Math.round(v * 100)}%"></i></span><span class="n">${pct(v)}</span></div>`).join('')}</div>
+      <p class="small muted" style="margin:0">${esc(basis)}</p>${verdict(p, bats)}</div>`;
+    $('callAside').textContent = bats === 'R' ? 'bats right' : 'bats left';
+  }
+  // field
+  const key = hitterKey(S.batter);
+  const hist = S.atbats.filter((x) => x.hitterKey === key && M.inPlay(x) && x.id !== S.savedId);
+  const wedges = p && bats ? M.ZONES.map((_, i) => ({ zone: i, p: p.dist[i] })) : null;
+  $('tagField').innerHTML = fieldSVG({ wedges, bats, dots: hist.map((x) => ({ x: x.outcome.x, y: x.outcome.y, type: x.outcome.type, faint: true })), marker: S.tag.x != null ? { x: S.tag.x, y: S.tag.y } : null, id: 'tag' });
+  $('tagLegend').innerHTML = `${wedges ? '<span><svg width="14" height="10"><rect width="14" height="10" fill="var(--pred)" opacity=".45"/></svg>The call</span>' : ''}<span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="var(--muted)" opacity=".6"/></svg>Earlier at-bats</span><span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="var(--clay)" stroke-width="2.4"/></svg>Where this one went (tap the field)</span>`;
+  const svg = $('tagField').querySelector('svg');
+  svg.addEventListener('click', (e) => {
+    const pt = svgPoint(svg, e);
+    S.tag.x = Math.round(pt.x * 10) / 10; S.tag.y = Math.round(pt.y * 10) / 10;
+    if (S.tag.kind !== 'inplay') { S.tag.kind = 'inplay'; if (['FOUL', 'MISS', 'TAKE'].includes(S.tag.result)) S.tag.result = null; }
+    if (!S.tag.type && S.analysis && S.analysis.ball && S.analysis.ball.type) S.tag.type = S.analysis.ball.type;
+    freezePrediction();
+    renderCall();
+  });
+  // chips
+  const sugg = S.analysis && S.analysis.ball && S.analysis.ball.found ? S.analysis.ball.type : null;
+  $('typeChips').innerHTML = ['GB', 'LD', 'FB', 'PU', 'BU'].map((t) => `<button type="button" class="chip ${sugg === t && !S.tag.type ? 'sugg' : ''}" data-v="${t}" aria-pressed="${S.tag.type === t}">${M.TYPE_LABEL[t]}${sugg === t && !S.tag.type ? ' ?' : ''}</button>`).join('');
+  $('resultChips').innerHTML = ['OUT', '1B', '2B', '3B', 'HR', 'E', 'FC'].map((r) => `<button type="button" class="chip" data-v="${r}" aria-pressed="${S.tag.result === r && S.tag.kind === 'inplay'}">${M.RESULT_LABEL[r]}</button>`).join('');
+  $('npChips').innerHTML = [['FOUL', 'foul'], ['MISS', 'miss'], ['TAKE', 'take']].map(([r, k]) => `<button type="button" class="chip" data-v="${r}" data-k="${k}" aria-pressed="${S.tag.kind === k}">${M.RESULT_LABEL[r]}</button>`).join('');
+  $('typeChips').querySelectorAll('button').forEach((b) => (b.onclick = () => { S.tag.type = S.tag.type === b.dataset.v ? null : b.dataset.v; if (S.tag.kind !== 'inplay') S.tag.kind = 'inplay'; freezePrediction(); renderCall(); }));
+  $('resultChips').querySelectorAll('button').forEach((b) => (b.onclick = () => { S.tag.result = S.tag.result === b.dataset.v ? null : b.dataset.v; S.tag.kind = 'inplay'; freezePrediction(); renderCall(); }));
+  $('npChips').querySelectorAll('button').forEach((b) => (b.onclick = () => { const on = S.tag.kind !== b.dataset.k; S.tag = { x: null, y: null, type: null, result: on ? b.dataset.v : null, kind: on ? b.dataset.k : null }; freezePrediction(); renderCall(); }));
+  // save button state
+  const need = [];
+  if (!S.batter.name.trim()) need.push('the batter’s name');
+  if (!bats) need.push('which side they bat from');
+  if (S.tag.kind === 'inplay') { if (S.tag.x == null) need.push('where the ball went'); if (!S.tag.type) need.push('the batted-ball type'); }
+  else if (!S.tag.kind) need.push('a result');
+  const btn = $('btnSave');
+  btn.disabled = !!need.length || !S.db || !S.canWrite || S.saving;
+  btn.textContent = S.savedId ? 'Update at-bat' : 'Save at-bat';
+  $('saveNote').textContent = !S.db ? (S.standalone ? 'This browser is blocking storage, so at-bats cannot be saved here.' : 'Saving needs Claude (open this page in the Claude app or on claude.ai).') : !S.canWrite ? 'You can view this team’s data but not add to it.' : need.length ? 'Still needed: ' + need.join(', ') + '.' : '';
+  $('btnNext').hidden = !(S.savedId && S.queue.some((q, i) => i !== S.qi && q.status === 'new'));
+}
+function verdict(p, bats) {
+  if (S.tag.kind !== 'inplay' || S.tag.x == null) return '';
+  const z = M.zoneOf(M.pullAngle(M.sprayAngle(S.tag.x, S.tag.y), bats));
+  const right = z === p.best;
+  return `<p class="small" style="margin:0"><span class="flag ${right ? 'good' : 'clay'}">${right ? '✓ The call was right' : 'Missed'}</span> You tagged it ${esc(M.ZONE_LABEL[M.ZONES[z]].toLowerCase())}${right ? '.' : `; the call said ${esc(M.ZONE_LABEL[M.ZONES[p.best]].toLowerCase())}.`}</p>`;
+}
+function freezePrediction() { if (S.prediction && !S.predFrozen) S.predFrozen = true; }
+
+$('btnSave').onclick = saveAtBat;
+$('btnNext').onclick = () => { const i = S.queue.findIndex((q, j) => j !== S.qi && q.status === 'new'); if (i >= 0) openClip(i); };
+
+async function saveAtBat() {
+  if (!S.db || S.saving) return;
+  S.saving = true; renderCall();
+  const b = { ...S.batter, name: S.batter.name.trim(), number: String(S.batter.number || '').trim(), team: String(S.batter.team || '').trim() };
+  const key = hitterKey(b);
+  const a = S.analysis;
+  const id = S.savedId || S.db.collection('atbats').doc().id;
+  try {
+    const now = Date.now();
+    const doc = {
+      hitterKey: key, hitter: { name: b.name, number: b.number, team: b.team },
+      bats: batsFor(b), game: b.game || '', count: b.count || '', inning: b.inning || '',
+      clip: { name: S.queue[S.qi]?.file?.name || '', duration: Math.round((video.duration || 0) * 100) / 100 },
+      outcome: { kind: S.tag.kind, type: S.tag.kind === 'inplay' ? S.tag.type : null, result: S.tag.result || null, x: S.tag.kind === 'inplay' ? S.tag.x : null, y: S.tag.kind === 'inplay' ? S.tag.y : null },
+      createdAt: S.savedId ? (S.atbats.find((x) => x.id === id)?.createdAt || now) : now, updatedAt: now, createdBy: S.uid || null,
+      swing: a ? { events: roundObj(a.events), metrics: roundObj(a.metrics), H: Math.round(a.H), frames: a.frames.length } : null,
+      features: a ? roundObj(M.featureVector({ metrics: a.metrics, events: a.events })) : null,
+      ball: a && a.ball && a.ball.found ? { found: true, air: a.ball.air, type: a.ball.type, n: a.ball.track.length } : { found: false },
+      prediction: S.prediction && batsFor(b) ? { dist: S.prediction.dist.map((v) => Math.round(v * 1000) / 1000), baseline: S.prediction.baseline, confidence: S.prediction.confidence, nHitter: S.prediction.nHitter, similar: S.prediction.similar } : null,
+      hasMedia: !!a,
+    };
+    if (a && !S.savedId) {
+      const thumb = await captureThumb();
+      const vw = video.videoWidth, vh = video.videoHeight;
+      const tfm = S.thumbFrame;
+      const media = { frames: packFrames(a.frames, vw, vh), thumb: thumb || null, thumbRect: tfm ? { cx: Math.round(tfm.cx), cy: Math.round(tfm.cy), size: Math.round(tfm.size) } : null, ball: a.ball && a.ball.found ? a.ball.track.map((p) => [Math.round(p.t * 1000) / 1000, Math.round(p.x / vw * 10000) / 10000, Math.round(p.y / vh * 10000) / 10000]) : null, events: roundObj(a.events) };
+      await S.db.doc('atbatMedia/' + id).set(media);
+    }
+    await S.db.doc('atbats/' + id).set(doc);
+    const prev = S.hitters[key] || {};
+    await S.db.doc('hitters/' + key).set({ name: b.name, number: b.number, team: b.team, bats: b.bats || prev.bats || '', updatedAt: now, firstSeen: prev.firstSeen || now });
+    const was = S.savedId;
+    S.savedId = id;
+    if (S.queue[S.qi]) S.queue[S.qi].status = 'saved';
+    renderQueue();
+    const n = S.atbats.filter((x) => x.hitterKey === key && x.id !== id).length + 1;
+    toast(was ? 'At-bat updated.' : `Saved. ${b.name} has ${n} at-bat${n === 1 ? '' : 's'} on file.`);
+  } catch (e) {
+    toast(e && e.code === 'quota_exceeded' ? 'The team database is full. Delete old at-bats to make room.' : 'Could not save: ' + (e && (e.message || e.code) || 'unknown error'));
+  } finally { S.saving = false; renderCall(); }
+}
+function roundObj(o) {
+  if (!o) return o;
+  const r = {};
+  for (const [k, v] of Object.entries(o)) r[k] = typeof v === 'number' ? (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null) : v ?? null;
+  return r;
+}
+
+// ======================================================================= field drawing
+function fieldGeom() {
+  const b = Number(S.field.basePath) || 60, F = Number(S.field.fence) || Math.round(b * 3.3);
+  return { b, F };
+}
+const fenceR = (F, deg) => F * (0.82 + 0.18 * Math.cos(2 * deg * Math.PI / 180));
+const polar = (deg, r) => [Math.sin(deg * Math.PI / 180) * r, -Math.cos(deg * Math.PI / 180) * r];   // svg coords (y up = negative)
+function fieldSVG({ wedges, bats, dots = [], marker, fielders, id = 'f', small, counts }) {
+  const { b, F } = fieldGeom();
+  const R = F * 1.03, W = R * 0.7071 * 2 + 40, top = -(F + 14), H = F + 14 + 26;
+  const fan = [];
+  for (let d = -45; d <= 45; d += 3) fan.push(polar(d, fenceR(F, d)).map((v) => v.toFixed(1)).join(','));
+  const fanPath = `M0,0 L${fan.join(' L')} Z`;
+  const s2 = b / Math.SQRT2;
+  const base1 = [s2, -s2], base2 = [0, -2 * s2], base3 = [-s2, -s2];
+  const mound = [0, -b * 0.672];
+  const dirtR = b * 1.06;
+  let out = `<svg viewBox="${(-W / 2).toFixed(1)} ${top.toFixed(1)} ${W.toFixed(1)} ${H.toFixed(1)}" role="img" aria-label="Baseball field${wedges ? ' showing the predicted spray zones' : ''}">
+  <defs><clipPath id="clip-${id}"><path d="${fanPath}"/></clipPath></defs>
+  <rect x="${(-W / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${W.toFixed(1)}" height="${H.toFixed(1)}" fill="var(--surface-2)"/>
+  <path d="${fanPath}" fill="var(--grass-2)" stroke="var(--grass)" stroke-width="${(F / 160).toFixed(2)}"/>
+  <g clip-path="url(#clip-${id})"><circle cx="${mound[0]}" cy="${mound[1].toFixed(1)}" r="${dirtR.toFixed(1)}" fill="var(--dirt)" opacity=".75"/></g>
+  <path d="M0,0 L${base1.map((v) => v.toFixed(1))} L${base2.map((v) => v.toFixed(1))} L${base3.map((v) => v.toFixed(1))} Z" fill="var(--grass-2)" stroke="var(--surface)" stroke-width="${(b / 60).toFixed(2)}"/>`;
+  for (const d of [100, 150, 200, 250, 300, 350]) {
+    if (d >= F * 0.97) continue;
+    const p0 = polar(-45, d), p1 = polar(45, d);
+    out += `<path d="M${p0.map((v) => v.toFixed(1))} A${d},${d} 0 0 1 ${p1.map((v) => v.toFixed(1))}" fill="none" stroke="var(--grass)" stroke-width="${(F / 400).toFixed(2)}" stroke-dasharray="${(F / 100).toFixed(1)} ${(F / 60).toFixed(1)}" opacity=".55"/>`;
+    if (!small) out += `<text x="${(polar(-45, d)[0] - 3).toFixed(1)}" y="${(polar(-45, d)[1] + 2).toFixed(1)}" font-size="${(F / 26).toFixed(1)}" fill="var(--muted)" text-anchor="end" font-family="var(--body)">${d}</text>`;
+  }
+  if (wedges && bats) {
+    const mx = Math.max(...wedges.map((w) => w.p), 0.01);
+    for (const w of wedges) {
+      const pc = M.zoneCenterPull(w.zone);
+      const lo = M.fieldAngle(pc - 9, bats), hi = M.fieldAngle(pc + 9, bats);
+      const a0 = Math.min(lo, hi), a1 = Math.max(lo, hi);
+      const pts = [], inner = [];
+      const rin = Math.min(b * 1.55, F * 0.6);
+      for (let d = a0; d <= a1 + 0.01; d += 1.5) { pts.push(polar(d, fenceR(F, d)).map((v) => v.toFixed(1)).join(',')); inner.unshift(polar(d, rin).map((v) => v.toFixed(1)).join(',')); }
+      out += `<path d="M${inner[inner.length - 1]} L${pts.join(' L')} L${inner.join(' L')} Z" fill="var(--pred)" opacity="${(0.06 + 0.5 * w.p / mx).toFixed(3)}" stroke="var(--surface)" stroke-width="${(F / 300).toFixed(2)}"/>`;
+      const mid = (a0 + a1) / 2, lp = polar(mid, fenceR(F, mid) * 0.8);
+      const txt = counts ? (counts[w.zone] ? String(counts[w.zone]) : '') : Math.round(w.p * 100) + '%';
+      if (txt) out += `<text x="${lp[0].toFixed(1)}" y="${lp[1].toFixed(1)}" font-size="${(F / (small ? 9 : 13)).toFixed(1)}" font-weight="800" fill="var(--pred)" text-anchor="middle" font-family="var(--display)">${txt}</text>`;
+    }
+  }
+  out += `<line x1="0" y1="0" x2="${polar(-45, fenceR(F, -45))[0].toFixed(1)}" y2="${polar(-45, fenceR(F, -45))[1].toFixed(1)}" stroke="var(--surface)" stroke-width="${(F / 150).toFixed(2)}"/>
+  <line x1="0" y1="0" x2="${polar(45, fenceR(F, 45))[0].toFixed(1)}" y2="${polar(45, fenceR(F, 45))[1].toFixed(1)}" stroke="var(--surface)" stroke-width="${(F / 150).toFixed(2)}"/>
+  <circle cx="${mound[0]}" cy="${mound[1].toFixed(1)}" r="${(b * 0.09).toFixed(1)}" fill="var(--dirt)" stroke="var(--surface)" stroke-width="${(b / 80).toFixed(2)}"/>`;
+  const bs = b * 0.06;
+  for (const p of [base1, base2, base3]) out += `<rect x="${(p[0] - bs / 2).toFixed(1)}" y="${(p[1] - bs / 2).toFixed(1)}" width="${bs.toFixed(1)}" height="${bs.toFixed(1)}" fill="var(--surface)" transform="rotate(45 ${p[0].toFixed(1)} ${p[1].toFixed(1)})"/>`;
+  out += `<path d="M${-bs * 0.6},0 L${bs * 0.6},0 L${bs * 0.6},${-bs * 0.5} L0,${-bs} L${-bs * 0.6},${-bs * 0.5} Z" fill="var(--surface)"/>`;
+  if (fielders) {
+    for (const [pos, f] of Object.entries(fielders)) {
+      const bx = f.base.x, by = -f.base.y, x = f.x, y = -f.y;
+      const moved = Math.hypot(x - bx, y - by) > F / 60;
+      if (moved) out += `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${(F / 40).toFixed(1)}" fill="none" stroke="var(--muted)" stroke-width="${(F / 300).toFixed(2)}" stroke-dasharray="2 2"/><line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--ink)" stroke-width="${(F / 300).toFixed(2)}" opacity=".6"/>`;
+      out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(F / 30).toFixed(1)}" fill="var(--ink)"/><text x="${x.toFixed(1)}" y="${(y + F / 85).toFixed(1)}" font-size="${(F / 34).toFixed(1)}" font-weight="800" fill="var(--surface)" text-anchor="middle" font-family="var(--display)">${pos}</text>`;
+    }
+  }
+  const r0 = F / (small ? 40 : 56);
+  for (const d of dots) {
+    const x = d.x, y = -d.y, op = d.faint ? 0.55 : 1;
+    const t = `<title>${esc(M.TYPE_LABEL[d.type] || 'Ball in play')}${d.result ? ' · ' + esc(M.RESULT_LABEL[d.result] || d.result) : ''}</title>`;
+    if (d.type === 'FB' || d.type === 'PU') out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r0 * (d.type === 'PU' ? 0.8 : 1.1)).toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="${(r0 * 0.45).toFixed(2)}" opacity="${op}" ${d.type === 'PU' ? `stroke-dasharray="${(r0 * 0.6).toFixed(1)} ${(r0 * 0.4).toFixed(1)}"` : ''}>${t}</circle>`;
+    else if (d.type === 'LD') out += `<path d="M${x.toFixed(1)},${(y - r0 * 1.2).toFixed(1)} L${(x + r0 * 1.1).toFixed(1)},${(y + r0 * 0.8).toFixed(1)} L${(x - r0 * 1.1).toFixed(1)},${(y + r0 * 0.8).toFixed(1)} Z" fill="var(--ink)" opacity="${op}">${t}</path>`;
+    else out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r0.toFixed(1)}" fill="var(--ink)" opacity="${op}">${t}</circle>`;
+  }
+  if (marker) {
+    const x = marker.x, y = -marker.y, rr = F / 32;
+    out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rr.toFixed(1)}" fill="none" stroke="var(--clay)" stroke-width="${(rr * 0.32).toFixed(2)}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(rr * 0.3).toFixed(1)}" fill="var(--clay)"/>`;
+  }
+  return out + '</svg>';
+}
+function svgPoint(svg, e) {
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  return { x: p.x, y: -p.y };
+}
+
+// ======================================================================= intro panel
+function renderIntro() {
+  const list = S.atbats.slice(0, 6);
+  if (!list.length) { $('recent').innerHTML = `<p class="empty">${S.standalone ? 'Nothing saved yet. At-bats you save are kept on this device; back them up from the settings button.' : S.db ? 'Nothing saved yet. Tagged at-bats from everyone on your team show up here.' : 'Saved at-bats appear here when this page is opened in Claude.'}</p>`; return; }
+  $('recent').innerHTML = `<div class="recent">${list.map((ab) => {
+    const o = ab.outcome || {};
+    const what = o.kind === 'inplay' ? `${M.TYPE_LABEL[o.type] || 'In play'}${o.result ? ', ' + (M.RESULT_LABEL[o.result] || o.result) : ''}` : (M.RESULT_LABEL[o.result] || 'No result');
+    return `<button type="button" data-k="${esc(ab.hitterKey)}"><span class="jersey">${esc(ab.hitter?.number || '?')}</span><span><b>${esc(ab.hitter?.name || 'Unknown')}</b> <span class="muted">· ${esc(what)}</span>${ab.needsReview ? ' <span class="flag clay">check</span>' : ''}</span><span class="small muted">${esc(ab.game || '')}</span></button>`;
+  }).join('')}</div>`;
+  $('recent').querySelectorAll('button').forEach((bt) => (bt.onclick = () => { S.selHitter = bt.dataset.k; setView('hitters'); }));
+}
+
+// ======================================================================= hitters view
+function hitterList() {
+  const map = {};
+  for (const h of Object.values(S.hitters)) map[h.key] = { ...h, abs: [] };
+  for (const ab of S.atbats) {
+    if (!map[ab.hitterKey]) map[ab.hitterKey] = { key: ab.hitterKey, name: ab.hitter?.name, number: ab.hitter?.number, team: ab.hitter?.team, bats: ab.bats, abs: [] };
+    map[ab.hitterKey].abs.push(ab);
+  }
+  return Object.values(map).sort((a, b) => b.abs.length - a.abs.length || String(a.name).localeCompare(String(b.name)));
+}
+function renderHitters() {
+  if (S.view !== 'hitters') return;
+  const all = hitterList();
+  // record
+  const sc = M.scorecard(S.atbats);
+  const nIn = S.atbats.filter(M.inPlay).length;
+  $('record').innerHTML = `<h2>Prediction record</h2>` + (sc.n ? `
+    <span class="stat"><b class="num">${pct(sc.side)}</b> right side of the field (${Math.round(sc.side * sc.n)} of ${sc.n})</span>
+    <span class="stat"><b class="num">${pct(sc.wedge)}</b> exact wedge</span>
+    <span class="stat"><b class="num">${pct(sc.baseline)}</b> guessing the hitter’s usual wedge</span>`
+    : `<span class="stat">Scored once you save at-bats that had a call. ${nIn} ball${nIn === 1 ? '' : 's'} in play on file so far.</span>`);
+  // team chips
+  const teams = [...new Set(all.map((h) => h.team).filter(Boolean))];
+  $('teamChips').innerHTML = ['all', ...teams].map((t) => `<button type="button" class="chip" data-t="${esc(t)}" aria-pressed="${S.hFilter === t}">${t === 'all' ? 'All teams' : esc(t)}${S.field.ourTeam && slug(t) === slug(S.field.ourTeam) ? ' (us)' : ''}</button>`).join('');
+  $('teamChips').querySelectorAll('button').forEach((b) => (b.onclick = () => { S.hFilter = b.dataset.t; renderHitters(); }));
+  const q = slug(S.hQuery);
+  const list = all.filter((h) => (S.hFilter === 'all' || h.team === S.hFilter) && (!q || slug(h.name).includes(q) || String(h.number) === S.hQuery.trim()));
+  if (!all.length) {
+    $('hRows').innerHTML = `<div class="hrow" style="cursor:default;grid-template-columns:1fr"><span class="sub">No hitters yet. Analyze a clip and save the at-bat; the hitter shows up here with a spray chart.</span></div>`;
+    $('hDetail').innerHTML = `<section class="panel"><div class="panel-h"><h2>Spray chart</h2></div><div class="fieldbox">${fieldSVG({ id: 'empty' })}</div><p class="small muted">Each tagged ball in play lands here, and the shaded wedges become the call for that hitter's next at-bat.</p></section>`;
+    return;
+  }
+  if (!S.selHitter || !all.find((h) => h.key === S.selHitter)) S.selHitter = (list[0] || all[0]).key;
+  const R = M.rows(S.atbats);
+  const pooled = M.poolDist(R);
+  $('hRows').innerHTML = list.map((h) => {
+    const d = M.hitterDist(R, h.key, pooled).dist;
+    const nIP = h.abs.filter(M.inPlay).length;
+    return `<button type="button" class="hrow" data-k="${esc(h.key)}" aria-current="${h.key === S.selHitter}"><span class="jersey">${esc(h.number || '?')}</span><span style="min-width:0"><div class="nm">${esc(h.name || 'Unknown')}</div><div class="sub">${esc(h.team || '')}${h.bats ? ' · bats ' + esc(h.bats) : ''} · ${nIP} in play</div></span><span class="spark" title="Pull line → oppo line">${d.map((v) => `<i style="flex:${Math.max(0.02, v).toFixed(3)};opacity:${(0.25 + 0.75 * v / Math.max(...d)).toFixed(2)}"></i>`).join('')}</span></button>`;
+  }).join('') || `<div class="hrow" style="cursor:default;grid-template-columns:1fr"><span class="sub">No hitters match.</span></div>`;
+  $('hRows').querySelectorAll('button').forEach((b) => (b.onclick = () => { S.selHitter = b.dataset.k; renderHitters(); }));
+  renderHitterDetail(all.find((h) => h.key === S.selHitter));
+}
+$('hSearch').addEventListener('input', (e) => { S.hQuery = e.target.value; renderHitters(); });
+
+function renderHitterDetail(h) {
+  if (!h) { $('hDetail').innerHTML = ''; return; }
+  const ip = h.abs.filter(M.inPlay);
+  const bats = h.bats === 'L' ? 'L' : h.bats === 'R' ? 'R' : (ip[0]?.bats || 'R');
+  const R = M.rows(S.atbats);
+  const mine = R.filter((r) => r.hitterKey === h.key);
+  const pred = M.predict(S.atbats, h.key, null);
+  const raw = [0, 0, 0, 0, 0]; for (const r of mine) raw[r.zone]++;
+  const rawD = mine.length ? raw.map((v) => v / mine.length) : null;
+  const types = M.typeDist(R, h.key);
+  const fg = fieldGeom();
+  const def = M.defense(S.atbats, h.key, bats, { basePath: fg.b, fence: fg.F });
+  const mode = S.hMode;
+  let field;
+  if (mode === 'spray') field = fieldSVG({ id: 'hd', bats, wedges: rawD ? M.ZONES.map((_, i) => ({ zone: i, p: rawD[i] })) : null, counts: mine.length < 10 ? raw : null, dots: ip.map((x) => ({ x: x.outcome.x, y: x.outcome.y, type: x.outcome.type, result: x.outcome.result })) });
+  else if (mode === 'call') field = fieldSVG({ id: 'hd', bats, wedges: M.ZONES.map((_, i) => ({ zone: i, p: pred.dist[i] })) });
+  else field = fieldSVG({ id: 'hd', bats, fielders: def.spots, dots: ip.map((x) => ({ x: x.outcome.x, y: x.outcome.y, type: x.outcome.type, faint: true })) });
+  const sd = pred.sides;
+  const hits = ip.filter((x) => M.HIT.has(x.outcome.result)).length;
+  const feat = (k) => M.mean(h.abs.map((x) => x.features && x.features[k]));
+  const team = (k) => M.mean(S.atbats.map((x) => x.features && x.features[k]));
+  const prof = [['downToRotation', 'Foot down → turn', 's', 2], ['loadTime', 'Leg lift → turn', 's', 2], ['hipLead', 'Hips ahead of shoulders', 's', 2], ['headDrift', 'Head drift', '%', 0], ['stride', 'Stride', 'H', 2]];
+  const fmtF = (v, u, d) => (v == null ? '—' : u === '%' ? Math.round(v * 100) + '%' : v.toFixed(d) + (u === 's' ? ' s' : u === 'H' ? ' H' : ''));
+  const calls = h.abs.filter((x) => x.prediction && M.inPlay(x));
+  const callHits = calls.filter((x) => { const z = M.zoneOf(M.abPull(x)); const p = x.prediction.dist; return p.indexOf(Math.max(...p)) === z; }).length;
+  const rowsHtml = h.abs.map((ab) => {
+    const o = ab.outcome || {};
+    let zoneTxt = '—', callTxt = '—';
+    if (M.inPlay(ab)) {
+      const z = M.zoneOf(M.abPull(ab)); zoneTxt = M.ZONE_LABEL[M.ZONES[z]];
+      if (ab.prediction) { const p = ab.prediction.dist; const pz = p.indexOf(Math.max(...p)); callTxt = pz === z ? '<span class="flag good">✓ called it</span>' : `<span class="flag">${esc(M.ZONE_LABEL[M.ZONES[pz]])}</span>`; }
+    }
+    const what = o.kind === 'inplay' ? `${esc(M.TYPE_LABEL[o.type] || '')}${o.result ? ' · ' + esc(M.RESULT_LABEL[o.result] || o.result) : ''}` : esc(M.RESULT_LABEL[o.result] || '—');
+    return `<div class="abrow"><div class="small"><b>${esc(ab.game || new Date(ab.createdAt || 0).toLocaleDateString())}</b>${ab.count || ab.inning ? `<div class="muted">${esc(ab.count || '')}${ab.count && ab.inning ? ' · ' : ''}${esc(ab.inning || '')}</div>` : ''}</div>
+      <div>${what}${ab.needsReview ? ' <span class="flag clay">check this one</span>' : ''}<div class="small muted">${zoneTxt}</div></div><div>${callTxt}</div>
+      <div class="abact">${ab.hasMedia ? `<button class="linkish" data-replay="${esc(ab.id)}">Replay</button>` : ''}<button class="linkish" data-edit="${esc(ab.id)}">Edit</button><button class="linkish" data-del="${esc(ab.id)}">Delete</button></div></div>`;
+  }).join('');
+  $('hDetail').innerHTML = `
+    <div class="dhead"><span class="jersey">${esc(h.number || '?')}</span><div><h2>${esc(h.name || 'Unknown')}</h2><div class="muted small">${esc(h.team || '')} · bats ${h.bats === 'S' ? 'both sides' : h.bats === 'L' ? 'left' : h.bats === 'R' ? 'right' : '?'} · ${ip.length} in play · ${h.abs.length} at-bat${h.abs.length === 1 ? '' : 's'} tagged</div></div></div>
+    <div class="dgrid">
+      <section class="panel">
+        <div class="panel-h"><h2>${mode === 'spray' ? 'Spray chart' : mode === 'call' ? 'Next at-bat call' : 'Where to play them'}</h2>
+          <span class="aside"><span class="seg" role="group" aria-label="Field view" id="hModes">${[['spray', 'Spray'], ['call', 'Call'], ['defense', 'Defense']].map(([k, l]) => `<button type="button" data-m="${k}" aria-pressed="${mode === k}">${l}</button>`).join('')}</span></span></div>
+        <div class="fieldbox">${field}</div>
+        ${mode === 'spray' ? `<div class="legend"><span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="var(--ink)"/></svg>Ground ball</span><span><svg width="12" height="12"><path d="M6 1 L11 10 L1 10 Z" fill="var(--ink)"/></svg>Line drive</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.2" fill="none" stroke="var(--ink)" stroke-width="2"/></svg>Fly ball</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="3.6" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="2 1.5"/></svg>Pop up</span><span><svg width="14" height="10"><rect width="14" height="10" fill="var(--pred)" opacity=".45"/></svg>${mine.length < 10 ? 'Balls per wedge' : 'Share by wedge'}</span></div>`
+          : mode === 'call' ? `<p class="small" style="margin:8px 0 0"><b style="color:var(--pred)">${esc(M.ZONE_LABEL[M.ZONES[pred.best]])}</b> is the most likely spot (${pct(pred.dist[pred.best])}, ${pred.confidence} confidence). Before a swing is seen this comes from the hitter's history; on the Analyze tab the swing itself also counts.</p>`
+          : `<p class="small" style="margin:8px 0 0">${esc(M.describeShift(def, bats))} Dashed rings are standard spots.</p>`}
+      </section>
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <section class="panel"><div class="panel-h"><h2>Tendencies</h2><span class="aside">${hits} hit${hits === 1 ? '' : 's'} on ${ip.length} ball${ip.length === 1 ? '' : 's'} in play</span></div>
+          <div class="bars">${[['Pull side', sd.pull], ['Middle', sd.center], ['Opposite', sd.oppo]].map(([l, v]) => `<div class="barrow"><span>${l}</span><span class="track"><i style="width:${Math.round(v * 100)}%"></i></span><span class="n">${pct(v)}</span></div>`).join('')}</div>
+          <div class="sublabel">Batted balls${types.n ? '' : ' (no data yet)'}</div>
+          <div class="bars">${M.TYPES.map((t, i) => `<div class="barrow actual"><span>${M.TYPE_LABEL[t]}</span><span class="track"><i style="width:${types.n ? Math.round(types.counts[i] / types.n * 100) : 0}%"></i></span><span class="n">${types.n ? types.counts[i] : '—'}</span></div>`).join('')}</div>
+          <p class="small muted" style="margin:10px 0 0">Blue bars are the smoothed call (history blended with the team pattern while the sample is small). ${calls.length ? `The call named the right wedge ${callHits} of ${calls.length} times.` : ''}</p>
+        </section>
+        <section class="panel"><div class="panel-h"><h2>Swing profile</h2><span class="aside">team average in grey</span></div>
+          <div class="bars">${prof.map(([k, l, u, d]) => `<div class="barrow" style="grid-template-columns:minmax(0,1fr) auto auto"><span>${l}</span><span class="num"><b>${fmtF(feat(k), u, d)}</b></span><span class="n">${fmtF(team(k), u, d)}</span></div>`).join('')}</div>
+        </section>
+      </div>
+    </div>
+    <section class="panel"><div class="panel-h"><h2>At-bats</h2></div>
+      <div class="abhead"><span>Game</span><span>Result · where</span><span>The call</span><span></span></div><div class="ablist">${rowsHtml}</div>
+    </section>`;
+  $('hModes').querySelectorAll('button').forEach((b) => (b.onclick = () => { S.hMode = b.dataset.m; renderHitters(); }));
+  $('hDetail').querySelectorAll('[data-replay]').forEach((b) => (b.onclick = () => openReplay(b.dataset.replay)));
+  $('hDetail').querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => openEdit(b.dataset.edit)));
+  $('hDetail').querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirmDelete(b)));
+}
+
+function confirmDelete(btn) {
+  const id = btn.dataset.del;
+  if (btn.dataset.armed) {
+    if (!S.db) return;
+    Promise.all([S.db.doc('atbats/' + id).delete(), S.db.doc('atbatMedia/' + id).delete()]).then(() => toast('At-bat deleted.')).catch(() => toast('Could not delete that at-bat.'));
+    return;
+  }
+  btn.dataset.armed = '1'; btn.textContent = 'Tap again to delete'; btn.style.color = 'var(--clay)';
+  setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Delete'; btn.style.color = ''; } }, 3500);
+}
+
+// ======================================================================= modals
+function modal(html, onMount) {
+  const root = $('modalRoot');
+  root.innerHTML = `<div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
+  const close = () => { root.innerHTML = ''; document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  $('scrim').addEventListener('click', (e) => { if (e.target.id === 'scrim') close(); });
+  onMount && onMount(close);
+  return close;
+}
+
+async function openReplay(id) {
+  const ab = S.atbats.find((x) => x.id === id);
+  modal(`<h2>Swing replay</h2><p class="small muted" style="margin:-4px 0 10px">${esc(ab?.hitter?.name || '')} · ${esc(ab?.game || '')}</p><div style="position:relative"><canvas class="replay" id="rp" width="560" height="560"></canvas><img id="rpThumb" alt="Frame at contact" hidden style="position:absolute;right:10px;top:10px;width:24%;border-radius:6px;border:2px solid rgba(255,255,255,.25)"></div><div class="actions"><button class="btn small" id="rpPlay">Pause</button><span class="seg" id="rpSpeed"><button data-s="0.25" aria-pressed="true">¼×</button><button data-s="0.5" aria-pressed="false">½×</button><button data-s="1" aria-pressed="false">1×</button></span><button class="btn ghost small" id="rpClose">Close</button></div><p class="small muted" id="rpNote"></p>`, async (close) => {
+    $('rpClose').onclick = close;
+    const cv = $('rp'), cx = cv.getContext('2d');
+    cx.fillStyle = '#0b120e'; cx.fillRect(0, 0, 560, 560); cx.fillStyle = '#93a499'; cx.font = '14px sans-serif'; cx.fillText('Loading…', 20, 30);
+    if (!S.db) return;
+    const d = await S.db.doc('atbatMedia/' + id).get().catch(() => null);
+    if (!d || !d.exists) { $('rpNote').textContent = 'No swing data was saved with this at-bat.'; return; }
+    const media = d.data();
+    const frames = unpackFrames(media.frames);
+    const ev = media.events || {};
+    if (media.thumb) { const im = $('rpThumb'); im.src = media.thumb; im.hidden = false; im.title = 'Frame at contact'; }
+    // frame of reference: the batter's box around all keypoints
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const f of frames) for (let k = 0; k < 17; k++) if (f.kp[k * 3 + 2] > 0.25) { x0 = Math.min(x0, f.kp[k * 3]); x1 = Math.max(x1, f.kp[k * 3]); y0 = Math.min(y0, f.kp[k * 3 + 1]); y1 = Math.max(y1, f.kp[k * 3 + 1]); }
+    const size = Math.max(x1 - x0, y1 - y0) * 1.2, mx = (x0 + x1) / 2, my = (y0 + y1) / 2, k = 560 / size;
+    const gy = (y1 - my) * k + 280 + 6;                 // ground line under the feet
+    const P = (x, y) => [(x - mx) * k + 280, (y - my) * k + 280];
+    let speed = 0.25, playing = true, t0 = performance.now(), ts = frames[0].t;
+    const span = frames[frames.length - 1].t - frames[0].t;
+    $('rpPlay').onclick = () => { playing = !playing; $('rpPlay').textContent = playing ? 'Pause' : 'Play'; t0 = performance.now(); ts = cur; };
+    $('rpSpeed').querySelectorAll('button').forEach((b) => (b.onclick = () => { speed = +b.dataset.s; t0 = performance.now(); ts = cur; $('rpSpeed').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b)); }));
+    let cur = frames[0].t;
+    const step = (now) => {
+      if (!cv.isConnected) return;
+      if (playing) { cur = ts + ((now - t0) / 1000) * speed; if (cur > frames[frames.length - 1].t + 0.4) { cur = frames[0].t; ts = cur; t0 = now; } }
+      const f = frames.reduce((b, x) => (Math.abs(x.t - cur) < Math.abs(b.t - cur) ? x : b), frames[0]);
+      cx.fillStyle = '#0b120e'; cx.fillRect(0, 0, 560, 560);
+      cx.strokeStyle = 'rgba(207,226,210,.12)'; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(0, gy); cx.lineTo(560, gy); cx.stroke();
+      cx.lineCap = 'round'; cx.lineWidth = 7; cx.strokeStyle = 'rgba(64, 211, 190, .95)';
+      for (const [a, b] of EDGES) { if (f.kp[a * 3 + 2] < 0.15 || f.kp[b * 3 + 2] < 0.15) continue; const p = P(f.kp[a * 3], f.kp[a * 3 + 1]), q = P(f.kp[b * 3], f.kp[b * 3 + 1]); cx.beginPath(); cx.moveTo(p[0], p[1]); cx.lineTo(q[0], q[1]); cx.stroke(); }
+      cx.fillStyle = '#fff'; for (let j = 5; j < 17; j++) { if (f.kp[j * 3 + 2] < 0.15) continue; const p = P(f.kp[j * 3], f.kp[j * 3 + 1]); cx.beginPath(); cx.arc(p[0], p[1], 5, 0, 7); cx.fill(); }
+      let hx = 0, hy = 0, n = 0; for (let j = 0; j < 5; j++) if (f.kp[j * 3 + 2] > 0.2) { hx += f.kp[j * 3]; hy += f.kp[j * 3 + 1]; n++; }
+      if (n) { const p = P(hx / n, hy / n); cx.beginPath(); cx.arc(p[0], p[1], 16, 0, 7); cx.lineWidth = 5; cx.stroke(); }
+      const lab = Math.abs(cur - (ev.tContact ?? -9)) < 0.05 ? 'CONTACT' : (ev.tDown != null && Math.abs(cur - ev.tDown) < 0.04) ? 'FOOT DOWN' : (ev.tLift != null && Math.abs(cur - ev.tLift) < 0.04) ? 'LEG LIFT' : '';
+      cx.font = '800 26px "Big Shoulders Display", sans-serif'; cx.fillStyle = lab === 'CONTACT' ? '#ff8a5c' : '#cfe2d2'; if (lab) cx.fillText(lab, 20, 540);
+      cx.fillStyle = '#93a499'; cx.font = '600 14px "Public Sans", sans-serif'; cx.fillText(`${(cur - (ev.tContact ?? cur)).toFixed(2)} s from contact`, 400, 540);
+      cx.fillStyle = 'rgba(255,255,255,.15)'; cx.fillRect(20, 552, 520, 3); cx.fillStyle = '#ffb38f'; cx.fillRect(20, 552, 520 * clamp((cur - frames[0].t) / span, 0, 1), 3);
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+function openEdit(id) {
+  const ab = S.atbats.find((x) => x.id === id); if (!ab) return;
+  const t = { ...(ab.outcome || {}) };
+  const bats = ab.bats;
+  const render = () => {
+    $('edField').innerHTML = fieldSVG({ id: 'ed', bats, marker: t.kind === 'inplay' && t.x != null ? { x: t.x, y: t.y } : null });
+    $('edField').querySelector('svg').addEventListener('click', (e) => { const p = svgPoint($('edField').querySelector('svg'), e); t.x = Math.round(p.x * 10) / 10; t.y = Math.round(p.y * 10) / 10; t.kind = 'inplay'; render(); });
+    $('edType').innerHTML = ['GB', 'LD', 'FB', 'PU', 'BU'].map((v) => `<button type="button" class="chip" data-v="${v}" aria-pressed="${t.type === v}">${M.TYPE_LABEL[v]}</button>`).join('');
+    $('edRes').innerHTML = ['OUT', '1B', '2B', '3B', 'HR', 'E', 'FC', 'FOUL', 'MISS', 'TAKE'].map((v) => `<button type="button" class="chip" data-v="${v}" aria-pressed="${t.result === v}">${M.RESULT_LABEL[v]}</button>`).join('');
+    $('edType').querySelectorAll('button').forEach((b) => (b.onclick = () => { t.type = b.dataset.v; t.kind = 'inplay'; render(); }));
+    $('edRes').querySelectorAll('button').forEach((b) => (b.onclick = () => { t.result = b.dataset.v; if (['FOUL', 'MISS', 'TAKE'].includes(t.result)) { t.kind = { FOUL: 'foul', MISS: 'miss', TAKE: 'take' }[t.result]; t.x = t.y = null; t.type = null; } else t.kind = 'inplay'; render(); }));
+  };
+  modal(`<h2>Edit at-bat</h2><p class="small muted" style="margin:-4px 0 10px">${esc(ab.hitter?.name || '')} · ${esc(ab.game || '')}. Tap the field to move where the ball went.</p>
+    <div class="fieldbox tap" id="edField"></div><div class="sublabel">Batted ball</div><div class="chips" id="edType"></div><div class="sublabel">Result</div><div class="chips" id="edRes"></div>
+    <div class="actions"><button class="btn primary" id="edSave">Save changes</button><button class="btn ghost" id="edCancel">Cancel</button></div>`, (close) => {
+    render();
+    $('edCancel').onclick = close;
+    $('edSave').onclick = async () => {
+      if (!S.db) return;
+      if (t.kind === 'inplay' && (t.x == null || !t.type)) { toast('Mark where the ball went and the batted-ball type.'); return; }
+      try { await S.db.doc('atbats/' + id).update({ outcome: { kind: t.kind || null, type: t.type || null, result: t.result || null, x: t.x ?? null, y: t.y ?? null }, needsReview: false, updatedAt: Date.now() }); toast('At-bat updated.'); close(); }
+      catch { toast('Could not save the change.'); }
+    };
+  });
+}
+
+$('btnSettings').onclick = () => {
+  const f = { ...S.field };
+  modal(`<h2>Field and team</h2>
+    <div class="grid2">
+      <label class="f">Base paths<select id="stBase">${[46, 50, 60, 65, 70, 80, 90].map((v) => `<option value="${v}" ${+f.basePath === v ? 'selected' : ''}>${v} ft</option>`).join('')}</select></label>
+      <label class="f">Center-field fence<input id="stFence" inputmode="numeric" value="${esc(f.fence)}"></label>
+      <label class="f wide">Your team’s scoreboard name<input id="stTeam" value="${esc(f.ourTeam || '')}" placeholder="e.g. GRGS"></label>
+    </div>
+    <p class="small muted">Used to draw the field and scale the defensive positions.${S.standalone ? '' : ' Shared with everyone using this page.'}</p>
+    <div class="actions"><button class="btn primary" id="stSave" ${S.db && S.canWrite ? '' : 'disabled'}>Save</button><button class="btn ghost" id="stForget">Forget batter spot</button><button class="btn ghost" id="stClose">Close</button></div>
+    ${S.standalone && S.db && S.db.exportAll ? `<div class="sublabel" style="margin-top:20px">Backup</div>
+    <p class="small muted" style="margin:0 0 10px">At-bats are stored in this browser only. Export a backup file to keep them safe or move them to another phone or computer, then import it there.</p>
+    <div class="actions" style="margin-top:0"><button class="btn" id="stExport">Export data</button><label class="btn" for="stImportFile">Import data</label><input type="file" id="stImportFile" accept="application/json,.json" hidden></div>
+    <p class="small muted" id="stBackupNote" style="margin:8px 0 0">${S.atbats.length} at-bat${S.atbats.length === 1 ? '' : 's'} on this device.</p>` : ''}`, (close) => {
+    if ($('stExport')) {
+      $('stExport').onclick = () => {
+        const blob = new Blob([JSON.stringify(S.db.exportAll())], { type: 'application/json' });
+        const url = URL.createObjectURL(blob), link = document.createElement('a');
+        link.href = url; link.download = `gs-baseball-scout-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      };
+      $('stImportFile').onchange = async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        try { const n = await S.db.importAll(JSON.parse(await f.text())); $('stBackupNote').textContent = `Imported ${n} records.`; toast('Backup imported.'); }
+        catch (err) { $('stBackupNote').textContent = 'That file is not a GS Baseball Scout backup.'; }
+        e.target.value = '';
+      };
+    }
+    $('stClose').onclick = close;
+    $('stForget').onclick = () => { store.set('seed', null); toast('The batter spot is cleared for your next clip.'); };
+    $('stSave').onclick = async () => {
+      const basePath = +$('stBase').value, fence = clamp(+$('stFence').value || Math.round(basePath * 3.3), 120, 450), ourTeam = $('stTeam').value.trim();
+      try { await S.db.doc('config/field').set({ basePath, fence, ourTeam }); S.field = { basePath, fence, ourTeam }; renderAll(); close(); toast('Field saved.'); } catch { toast('Could not save the field settings.'); }
+    };
+  });
+};
+
+// ======================================================================= render all
+function renderAll() {
+  renderIntro();
+  if (S.view === 'hitters') renderHitters();
+  if (!$('pCall').hidden) { if (!S.predFrozen && S.analysis) computePrediction(); renderCall(); }
+}
+renderAll();
+renderSync();
+initCaps();
+</script>
+</body>
+</html>
