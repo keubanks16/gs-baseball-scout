@@ -124,6 +124,10 @@ label.drop { cursor: pointer; }
 .transport .sp button { border: 0; background: transparent; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .transport .sp button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
 .tl { width: 100%; height: 58px; display: block; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); cursor: pointer; touch-action: none; }
+.clipbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.clipname { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.clipbar .btn { flex: none; cursor: pointer; }
+label.btn { cursor: pointer; }
 .queue { display: flex; gap: 6px; flex-wrap: wrap; }
 .qchip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
 .qchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -268,6 +272,7 @@ label.f.wide { grid-column: 1 / -1; }
   <!-- ======================= ANALYZE ======================= -->
   <section class="analyze" id="viewAnalyze" role="tabpanel" aria-labelledby="tabAnalyze">
     <div class="film">
+      <div class="clipbar" id="clipbar" hidden><span class="clipname" id="clipNameBar"></span><label class="btn small" for="file" id="btnNewClip">+ New clip</label></div>
       <div class="stage empty" id="stage">
         <video id="video" playsinline muted preload="auto" hidden></video>
         <canvas class="ov" id="overlay" hidden></canvas>
@@ -360,6 +365,7 @@ label.f.wide { grid-column: 1 / -1; }
         <div class="actions">
           <button class="btn primary" id="btnSave" type="button" disabled>Save at-bat</button>
           <button class="btn ghost" id="btnNext" type="button" hidden>Next clip</button>
+          <label class="btn" for="file" id="btnAnother" hidden>+ Add another clip</label>
           <span class="small muted" id="saveNote"></span>
         </div>
       </section>
@@ -485,10 +491,14 @@ $('stage').addEventListener('drop', (e) => { const f = [...(e.dataTransfer?.file
 
 function addFiles(files) {
   if (!files.length) return;
+  const first = S.queue.length;
   for (const f of files) S.queue.push({ file: f, status: 'new' });
-  renderQueue();
-  if (S.qi < 0 || S.queue[S.qi].status === 'saved' || S.queue[S.qi].status === 'skipped') openClip(S.queue.length - files.length);
   ensurePose().catch(() => {});
+  if (S.abort) { renderQueue(); toast(files.length === 1 ? 'Added. It opens when this swing finishes.' : `Added ${files.length} clips to the queue.`); return; }
+  // open the first new clip right away; an unsaved current clip stays in the queue
+  const cur = S.queue[S.qi];
+  if (cur && cur.status === 'new') cur.status = 'skipped';
+  openClip(first);
 }
 function renderQueue() {
   const q = $('queue');
@@ -506,6 +516,7 @@ async function openClip(i) {
   S.url = URL.createObjectURL(it.file);
   resetClipState();
   video.hidden = false; overlay.hidden = false; drop.hidden = true; $('stage').classList.remove('empty');
+  $('clipbar').hidden = false; $('clipNameBar').textContent = it.file.name;
   $('transport').hidden = false; $('timeline').hidden = false;
   $('pIntro').hidden = true; $('pBatter').hidden = false; $('pSwing').hidden = false; $('pCall').hidden = true;
   $('clipName').textContent = it.file.name;
@@ -1087,7 +1098,9 @@ function renderCall() {
   btn.disabled = !!need.length || !S.db || !S.canWrite || S.saving;
   btn.textContent = S.savedId ? 'Update at-bat' : 'Save at-bat';
   $('saveNote').textContent = !S.db ? (S.standalone ? 'This browser is blocking storage, so at-bats cannot be saved here.' : 'Saving needs Claude (open this page in the Claude app or on claude.ai).') : !S.canWrite ? 'You can view this team’s data but not add to it.' : need.length ? 'Still needed: ' + need.join(', ') + '.' : '';
-  $('btnNext').hidden = !(S.savedId && S.queue.some((q, i) => i !== S.qi && q.status === 'new'));
+  const queued = S.queue.some((q, i) => i !== S.qi && q.status === 'new');
+  $('btnNext').hidden = !(S.savedId && queued);
+  $('btnAnother').hidden = !(S.savedId && !queued);
 }
 function verdict(p, bats) {
   if (S.tag.kind !== 'inplay' || S.tag.x == null) return '';

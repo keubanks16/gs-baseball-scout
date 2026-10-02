@@ -321,10 +321,13 @@ export function measure(frames, tSwing) {
     while (i > 0 && !(Number.isFinite(fy[i - 1]) && fy[i - 1] >= fyBase - band)) i--;
     tLift = t[i];
   }
-  const tDown = (iPeak >= 0 && liftAmt > 0.05 * H) ? firstSustained(fy.map((v) => v >= mn + 0.075 * H), t[iPeak]) : null;
+  let tDown = (iPeak >= 0 && liftAmt > 0.05 * H) ? firstSustained(fy.map((v) => v >= mn + 0.075 * H), t[iPeak]) : null;
   const tHip = firstSustained(hp.map((v) => v > 0.4), tSwing - 0.6);
   const tSh = firstSustained(sh.map((v) => v > 0.4), tSwing - 0.6);
   const tRot = (tHip != null && tSh != null) ? (tHip + tSh) / 2 : (tHip ?? tSh ?? tSwing);
+  // the front foot has to land before the body turns; otherwise this was not the stride
+  if (tDown != null && tDown > tRot + 0.12) tDown = null;
+  if (tLift != null && tDown != null && tLift >= tDown) tLift = null;
   // stride: how far the front foot travelled (in body heights)
   let stride = NaN;
   if (tDown != null) { const i = t.findIndex((tt) => tt >= tDown); if (i >= 0) stride = dist(fx[i], fy[i], fxBase, fyBase) / H; }
