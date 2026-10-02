@@ -1,6 +1,25 @@
 # GS Baseball Scout
 
-Track each batter's swing from GameChanger clips, tag where the ball went, and build spray charts, defensive positioning and a call on where each hitter will hit it next. Everything runs in the browser: clips never leave your device and there is no server.
+Track each batter's swing from GameChanger clips, or let it scout a whole game, and build spray charts, defensive positioning and a call on where each hitter will hit it next. Everything runs in the browser: clips never leave your device and there is no server.
+
+## Scout a full game
+
+The **Scout a game** tab watches a whole game video by itself and builds spray charts for every hitter it sees.
+
+1. **Get the game onto your phone.** GameChanger doesn't let other apps read its video, so record it yourself:
+   - *Opponent games:* play the game in GameChanger, full screen in landscape, and record it with iPhone **Screen Recording**. Turn on Do Not Disturb first. Only the innings the opponent bats are needed; stop and start a new recording between them if you like, and pick all the parts together.
+   - *Your own games:* the person streaming can use GameChanger's **Live Stream and Record to Device**, which saves the full game to their camera roll.
+2. **Tap the four bases** on any frame where they are visible (home, first, second, third). White lines show the field it worked out; check they sit on the foul lines.
+3. **Pick who to scout.** It reads the team names from the GameChanger scoreboard; choose the opponent, or every batter.
+4. **Start scouting** and leave the app open (the screen stays on). It plays the video fast and watches the lane from home to first. A batter running it means the ball was put in play. It then checks each one: it finds the batter in the box, measures the swing, follows the ball and fits its flight to the field to place it on the spray chart.
+5. **Check and save.** Each ball in play shows the batter's picture, the scoreboard line it read the name from, the batted-ball type and where it went. Use **Watch** to see the swing and the ball's path, **Adjust** to move a ball, then **Save to spray charts**.
+
+Things to know:
+
+- Direction comes from the ball's flight and is usually within a few degrees. Distance is an estimate, best for fly balls. Ground balls are placed at infield depth.
+- Hits and outs aren't filled in. Edit an at-bat later on the Hitters tab to add the result.
+- Expect roughly a third to a half of the video's length in processing time on a recent iPhone.
+- Batter names are read from the scoreboard with Tesseract OCR, which downloads once (about 4 MB) and runs on the phone. If it can't load, type each name once. Other at-bats by the same batter fill in automatically.
 
 ## Put it on GitHub (no coding needed)
 
@@ -32,7 +51,7 @@ At-bats are saved in the browser on the device you use (the dot in the header sa
 
 ## Differences from the Claude version
 
-- You type the batter's name, number and team from the scoreboard (the Claude version reads it for you). Names you've saved before autocomplete.
+- On the Analyze tab you type the batter's name, number and team from the scoreboard (the Claude version reads it for you). Names you've saved before autocomplete. On the Scout a game tab, names are read with on-device OCR.
 - Data is kept per device instead of being shared with your team automatically.
 
 ## Updating the site
@@ -48,6 +67,9 @@ Upload the changed files to the repository again (same names replace the old one
 | `pose.js` | Runs the pose model on the graphics chip with TensorFlow.js |
 | `model.js` | Spray zones, the prediction, the prediction record and defensive shading |
 | `store-local.js` | Saves at-bats in this browser (IndexedDB) with export/import |
+| `field.js` | Field geometry from the four tapped bases, the camera, and the ball's flight |
+| `scout.js` | Full-game scan: finds balls in play and checks each one |
+| `overlay.js` | Reads the GameChanger scoreboard (rows, at-bat dot, batter line, OCR) |
 | `model/` | The pose model (MoveNet Thunder, 16-bit weights) |
 | `icons/`, `manifest.webmanifest` | Home-screen icon and app settings |
 
@@ -55,4 +77,5 @@ Upload the changed files to the repository again (same names replace the old one
 
 - Pose model: [MoveNet SinglePose Thunder](https://www.tensorflow.org/hub/tutorials/movenet) by Google, Apache License 2.0. Converted here to a compact op list with 16-bit per-channel weights.
 - [TensorFlow.js](https://www.tensorflow.org/js) 4.22.0 (Apache License 2.0), loaded from cdnjs.
+- [Tesseract.js](https://github.com/naptha/tesseract.js) 5.1.1 (Apache License 2.0), loaded from jsDelivr when scouting a game.
 - Fonts: Big Shoulders Display and Public Sans (SIL Open Font License), from Google Fonts.

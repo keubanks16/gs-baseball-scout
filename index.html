@@ -246,6 +246,25 @@ label.f.wide { grid-column: 1 / -1; }
 .tablewrap { overflow-x: auto; }
 .linkish { background: none; border: 0; padding: 0; color: var(--pred); font-weight: 600; font-size: 13px; }
 
+/* ---------- scout a game ---------- */
+.seek { flex: 1 1 160px; min-width: 120px; accent-color: var(--clay); }
+.plays { display: grid; margin-top: 8px; }
+.play { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.play.off { opacity: .55; }
+.play .thumb { width: 64px; height: 64px; border-radius: 8px; background: var(--film); object-fit: cover; display: block; }
+.play .top { display: grid; grid-template-columns: minmax(0, 1fr) 64px auto; gap: 6px; align-items: center; }
+.play input[type=text], .play input[inputmode] { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 5px 8px; font-size: 14px; font-weight: 600; width: 100%; min-width: 0; }
+.play .inc { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.play .inc input { width: 18px; height: 18px; accent-color: var(--clay); }
+.play .board { display: block; height: 18px; width: auto; max-width: 100%; border-radius: 3px; margin-top: 6px; }
+.play .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 12.5px; }
+.play .acts { display: flex; gap: 14px; margin-top: 6px; }
+.basechip[aria-current="true"] { border-style: dashed; border-color: var(--clay); color: var(--clay); }
+.stat3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-top: 12px; }
+.stat3 div { background: var(--surface); padding: 8px 10px; font-size: 12px; color: var(--muted); }
+.stat3 b { display: block; font: 800 22px/1.1 var(--display); color: var(--ink); }
+@media (max-width: 640px) { .tabs button { padding: 6px 11px; font-size: 13px; } }
+
 /* ---------- modal + toast ---------- */
 .scrim { position: fixed; inset: 0; background: rgba(5, 9, 7, .55); display: grid; place-items: center; padding: 16px; z-index: 50; }
 .modal { background: var(--surface); border-radius: 12px; padding: 18px; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
@@ -261,6 +280,7 @@ label.f.wide { grid-column: 1 / -1; }
     <div class="mark"><b><span>GS</span> Baseball Scout</b><small>game film → spray charts → the call</small></div>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" id="tabAnalyze" aria-selected="true" aria-controls="viewAnalyze">Analyze</button>
+      <button role="tab" id="tabScout" aria-selected="false" aria-controls="viewScout">Scout a game</button>
       <button role="tab" id="tabHitters" aria-selected="false" aria-controls="viewHitters">Hitters</button>
     </nav>
     <span class="sync" id="sync"><i></i><span>Connecting…</span></span>
@@ -316,6 +336,7 @@ label.f.wide { grid-column: 1 / -1; }
           <li><div><b>It makes the call before you tag it</b><span>Pull, middle or opposite field, from that hitter's history and from swings that looked like this one.</span></div></li>
           <li><div><b>Tap where the ball went</b><span>Every tagged at-bat sharpens the spray chart, the defensive positioning and the next prediction.</span></div></li>
         </ol>
+        <p class="small" style="margin:14px 0 0">Have a whole game on video? <button type="button" class="linkish" id="goScout">Scout a game</button> finds every ball in play by itself.</p>
         <div class="sublabel">Latest at-bats</div>
         <div id="recent"><p class="empty">Nothing saved yet. Tagged at-bats from everyone on your team show up here.</p></div>
         <p class="small muted" style="margin:14px 0 0">Pose model: MoveNet Thunder (Google, Apache 2.0) on TensorFlow.js, running in your browser.</p>
@@ -372,6 +393,77 @@ label.f.wide { grid-column: 1 / -1; }
     </aside>
   </section>
 
+  <!-- ======================= SCOUT A FULL GAME ======================= -->
+  <section class="analyze" id="viewScout" role="tabpanel" aria-labelledby="tabScout" hidden>
+    <div class="film">
+      <div class="clipbar" id="scBar" hidden><span class="clipname" id="scName"></span><label class="btn small" for="scFile" id="scChange">Change video</label></div>
+      <div class="stage empty" id="scStage">
+        <video id="scVideo" playsinline muted preload="auto" hidden></video>
+        <canvas class="ov" id="scOv" hidden></canvas>
+        <label class="drop" id="scDrop" for="scFile">
+          <span class="drop-in">
+            <svg class="diamond" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 92 L8 50 L50 8 L92 50 Z" fill="none" stroke="#9fc5aa" stroke-width="2"/><path d="M50 92 L14 56 A51 51 0 0 1 86 56 Z" fill="rgba(217,185,154,.25)"/><circle cx="50" cy="56" r="4" fill="#d9b99a"/><rect x="46" y="88" width="8" height="8" fill="#eef3ef"/><rect x="84" y="46" width="7" height="7" fill="#eef3ef" transform="rotate(45 87.5 49.5)"/><rect x="46.5" y="4.5" width="7" height="7" fill="#eef3ef" transform="rotate(45 50 8)"/><rect x="5" y="46" width="7" height="7" fill="#eef3ef" transform="rotate(45 8.5 49.5)"/><path d="M50 88 L30 30 M50 88 L64 24 M50 88 L80 44" stroke="#ffb38f" stroke-width="1.6" stroke-dasharray="3 3" fill="none"/></svg>
+            <span class="drop-h">Scout a full game</span>
+            <span class="drop-p">Pick a screen recording of the game, or several, one per half-inning. It finds every ball in play, measures each swing, follows the ball and builds the hitters' spray charts. The video stays on this device.</span>
+            <span class="btn primary">Choose game video</span>
+          </span>
+        </label>
+        <div class="hint" id="scHint" hidden></div>
+        <div class="progress" id="scProg" hidden><span id="scProgText">Working…</span><button id="scStop" type="button">Stop</button><div class="bar"><i id="scProgBar"></i></div></div>
+      </div>
+      <input type="file" id="scFile" class="vh" accept="video/*" multiple aria-label="Choose game video">
+      <div class="transport" id="scTransport" hidden>
+        <button class="btn small ghost" id="scBack" type="button" aria-label="Back 10 seconds">− 10 s</button>
+        <input type="range" class="seek" id="scSeek" min="0" max="1000" step="1" value="0" aria-label="Move through the video">
+        <button class="btn small ghost" id="scFwd" type="button" aria-label="Forward 10 seconds">+ 10 s</button>
+        <span class="t num" id="scClock">0:00</span>
+      </div>
+      <div class="queue" id="scParts"></div>
+    </div>
+
+    <aside class="card">
+      <section class="panel" id="scIntro">
+        <div class="panel-h"><h2>Scout a whole game</h2></div>
+        <ol class="howto">
+          <li><div><b>Get the game on your phone</b><span>In GameChanger, play the game full screen in landscape and record it with iPhone Screen Recording (turn on Do Not Disturb first). Only the innings the other team bats are needed. For your own games, Live Stream and Record to Device saves the whole game.</span></div></li>
+          <li><div><b>Tap the four bases once</b><span>That tells GS Baseball Scout where the field is, so it can turn the ball's flight into a spot on the spray chart.</span></div></li>
+          <li><div><b>Let it run</b><span>It watches the runner's lane to find balls in play, then checks each one: the batter, the swing and the ball off the bat. Keep the app open and the phone plugged in.</span></div></li>
+          <li><div><b>Check and save</b><span>Names come from the GameChanger scoreboard. Fix anything that looks off, then save them all to the spray charts.</span></div></li>
+        </ol>
+      </section>
+
+      <section class="panel" id="scBases" hidden>
+        <div class="panel-h"><span class="step">1</span><h2>Mark the bases</h2><span class="aside" id="scBaseAside"></span></div>
+        <p class="small" id="scBaseText" style="margin:0 0 10px"></p>
+        <div class="chips" id="scBaseChips"></div>
+        <div class="grid2" style="margin-top:12px"><label class="f">Base paths<select id="scBP"></select></label></div>
+        <p class="err" id="scBaseErr" hidden></p>
+        <div class="actions"><button class="btn small ghost" id="scUndo" type="button">Undo last tap</button><button class="btn small ghost" id="scRedo" type="button">Start over</button><button class="btn small primary" id="scBasesOk" type="button" hidden>Looks right</button></div>
+      </section>
+
+      <section class="panel" id="scTeam" hidden>
+        <div class="panel-h"><span class="step">2</span><h2>Who to scout</h2></div>
+        <div class="status" id="scTeamStatus" style="margin:0 0 10px"><span class="dot"></span><span></span></div>
+        <div class="chips" id="scTeamChips"></div>
+        <div class="grid2" style="margin-top:12px"><label class="f wide">Game<input id="scGame" placeholder="e.g. vs GRGS, Oct 2"></label></div>
+      </section>
+
+      <section class="panel" id="scRun" hidden>
+        <div class="panel-h"><span class="step">3</span><h2>Scout the game</h2><span class="aside" id="scRunAside"></span></div>
+        <p class="small" id="scRunText" style="margin:0"></p>
+        <div class="actions"><button class="btn primary" id="scGo" type="button">Start scouting</button><button class="btn ghost" id="scStop2" type="button" hidden>Stop</button></div>
+      </section>
+
+      <section class="panel" id="scResults" hidden>
+        <div class="panel-h"><h2>Balls in play</h2><span class="aside" id="scResAside"></span></div>
+        <div class="fieldbox" id="scField"></div>
+        <div class="legend" id="scLegend"></div>
+        <div class="plays" id="scList"></div>
+        <div class="actions"><button class="btn primary" id="scSave" type="button" disabled>Save to spray charts</button><span class="small muted" id="scSaveNote"></span></div>
+      </section>
+    </aside>
+  </section>
+
   <!-- ======================= HITTERS ======================= -->
   <section class="hitters" id="viewHitters" role="tabpanel" aria-labelledby="tabHitters" hidden>
     <div class="record" id="record"></div>
@@ -390,6 +482,9 @@ label.f.wide { grid-column: 1 / -1; }
 <script type="module">
 import { EDGES, analyzeSwing, waitFrame, packFrames, unpackFrames } from './swing.js';
 import * as M from './model.js';
+import * as F from './field.js';
+import * as SC from './scout.js';
+import * as OV from './overlay.js';
 
 // ======================================================================= state
 const $ = (id) => document.getElementById(id);
@@ -472,15 +567,19 @@ function renderSync() {
 function setView(v) {
   S.view = v;
   $('tabAnalyze').setAttribute('aria-selected', v === 'analyze');
+  $('tabScout').setAttribute('aria-selected', v === 'scout');
   $('tabHitters').setAttribute('aria-selected', v === 'hitters');
   $('viewAnalyze').hidden = v !== 'analyze';
+  $('viewScout').hidden = v !== 'scout';
   $('viewHitters').hidden = v !== 'hitters';
   if (v === 'hitters') renderHitters();
   if (v === 'analyze') requestAnimationFrame(sizeOverlay);
+  if (v === 'scout') requestAnimationFrame(() => { scSize(); renderScout(); });
 }
 $('tabAnalyze').onclick = () => setView('analyze');
+$('tabScout').onclick = () => setView('scout');
 $('tabHitters').onclick = () => setView('hitters');
-if (location.hash === '#hitters') setView('hitters');
+$('goScout').onclick = () => setView('scout');
 
 // ======================================================================= clips
 $('file').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
@@ -1497,6 +1596,598 @@ $('btnSettings').onclick = () => {
   });
 };
 
+// ======================================================================= scout a full game
+const G = {
+  files: [], fi: -1, url: null, bp: null, taps: [], zoom: null, cal: null, baseErr: '',
+  teams: null, teamNote: '', target: 'all', game: '', phase: 'empty', needCal: null, calDone: null,
+  plays: [], clusters: [], abort: null, live: null, watch: null, stats: null, wake: null, startedAt: 0,
+};
+const sv = $('scVideo'), sov = $('scOv'), sctx = sov.getContext('2d');
+const BASES = ['home plate', 'first base', 'second base', 'third base'];
+const BASE_SHORT = ['Home', '1st', '2nd', '3rd'];
+const mmss = (t) => { t = Math.max(0, Math.round(t || 0)); const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), x = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+
+$('scFile').addEventListener('change', (e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) scoutFiles(f); });
+['dragenter', 'dragover'].forEach((ev) => $('scStage').addEventListener(ev, (e) => { e.preventDefault(); $('scDrop').classList.add('over'); }));
+['dragleave', 'drop'].forEach((ev) => $('scStage').addEventListener(ev, (e) => { e.preventDefault(); $('scDrop').classList.remove('over'); }));
+$('scStage').addEventListener('drop', (e) => { const f = [...(e.dataTransfer?.files || [])].filter((x) => x.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(x.name)); if (f.length) scoutFiles(f); });
+
+async function scoutFiles(files) {
+  if (G.abort) { toast('Stop the scan before changing the video.'); return; }
+  const unsaved = G.plays.filter((p) => p.include && !p.savedId).length;
+  if (unsaved && !confirm(`${unsaved} ball${unsaved === 1 ? '' : 's'} in play from the last video are not saved yet. Start a new game anyway?`)) return;
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  Object.assign(G, { files: files.map((f) => ({ file: f, status: 'new', dur: null, cal: null })), taps: [], zoom: null, cal: null, baseErr: '', teams: null, teamNote: '', target: 'all', game: '', needCal: null, plays: [], clusters: [], watch: null, live: null, stats: null });
+  G.bp = Number(S.field.basePath) || 60;
+  ensurePose().catch(() => {});
+  const ok = await scOpen(0);
+  if (!ok) return;
+  for (let i = 1; i < G.files.length; i++) G.files[i].dur = await videoDuration(G.files[i].file).catch(() => null);
+  G.phase = 'bases';
+  renderScout(); scDraw();
+}
+function videoDuration(file) {
+  return new Promise((res, rej) => {
+    const v = document.createElement('video'); v.preload = 'metadata'; v.muted = true;
+    const u = URL.createObjectURL(file);
+    v.onloadedmetadata = () => { res(v.duration); URL.revokeObjectURL(u); };
+    v.onerror = () => { rej(new Error('decode')); URL.revokeObjectURL(u); };
+    v.src = u;
+  });
+}
+async function scOpen(i, at) {
+  G.fi = i; const it = G.files[i];
+  if (G.url) URL.revokeObjectURL(G.url);
+  G.url = URL.createObjectURL(it.file);
+  sv.hidden = false; sov.hidden = false; $('scDrop').hidden = true; $('scStage').classList.remove('empty');
+  $('scBar').hidden = false; $('scName').textContent = G.files.length > 1 ? `Part ${i + 1} of ${G.files.length} · ${it.file.name}` : it.file.name;
+  $('scTransport').hidden = false;
+  sv.src = G.url; sv.load();
+  try {
+    await new Promise((res, rej) => {
+      const ok = () => { cl(); res(); }, bad = () => { cl(); rej(new Error('decode')); };
+      const cl = () => { sv.removeEventListener('loadeddata', ok); sv.removeEventListener('error', bad); };
+      sv.addEventListener('loadeddata', ok); sv.addEventListener('error', bad);
+    });
+  } catch {
+    toast('This browser could not open that video. Try an .mp4 or .mov file in Safari or Chrome.', 5000);
+    $('scDrop').hidden = false; sv.hidden = true; sov.hidden = true; $('scStage').classList.add('empty'); $('scTransport').hidden = true; $('scBar').hidden = true;
+    G.phase = 'empty'; renderScout();
+    return false;
+  }
+  it.dur = sv.duration;
+  $('scStage').style.aspectRatio = String(clamp(sv.videoWidth / sv.videoHeight, 4 / 3, 2.4));
+  await new Promise((r) => requestAnimationFrame(r));
+  scSize();
+  await waitFrame(sv, at != null ? at : Math.min(sv.duration * 0.08, 45));
+  scClock(); scDraw(); renderParts();
+  return true;
+}
+function renderParts() {
+  const q = $('scParts');
+  if (G.files.length < 2) { q.innerHTML = ''; return; }
+  q.innerHTML = G.files.map((it, i) => `<span class="qchip ${i === G.fi ? 'cur' : ''} ${it.status === 'done' ? 'saved' : ''}"><i></i><span>Part ${i + 1}${it.dur ? ' · ' + mmss(it.dur) : ''}</span></span>`).join('');
+}
+
+// ---------------------------------------------------------------- stage, zoom, drawing
+function scSize() {
+  const r = $('scStage').getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (!r.width || !r.height) return;
+  sov.width = Math.round(r.width * dpr); sov.height = Math.round(r.height * dpr);
+  scZoomCSS(); scDraw();
+}
+window.addEventListener('resize', () => { if (S.view === 'scout') scSize(); });
+function scBaseRect(cw, ch) { const vw = sv.videoWidth || 16, vh = sv.videoHeight || 9, s = Math.min(cw / vw, ch / vh); return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2 }; }
+function scMap(cw, ch) {
+  const b = scBaseRect(cw, ch);
+  if (!G.zoom) return { ...b, z: 1 };
+  const z = G.zoom.z, s = b.s * z, vw = sv.videoWidth * s, vh = sv.videoHeight * s;
+  let ox = cw / 2 - G.zoom.x * s, oy = ch / 2 - G.zoom.y * s;
+  ox = vw <= cw ? (cw - vw) / 2 : clamp(ox, cw - vw, 0);
+  oy = vh <= ch ? (ch - vh) / 2 : clamp(oy, ch - vh, 0);
+  return { s, ox, oy, z };
+}
+function scZoomCSS() {
+  const r = $('scStage').getBoundingClientRect(); if (!r.width) return;
+  const m = scMap(r.width, r.height), b = scBaseRect(r.width, r.height);
+  if (m.z === 1) { sv.style.transform = ''; return; }
+  sv.style.transformOrigin = '0 0';
+  sv.style.transform = `translate(${m.ox - b.ox * m.z}px, ${m.oy - b.oy * m.z}px) scale(${m.z})`;
+}
+function scPoint(e) {
+  const rect = sov.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, m = scMap(sov.width, sov.height);
+  const x = ((e.clientX - rect.left) * dpr - m.ox) / m.s, y = ((e.clientY - rect.top) * dpr - m.oy) / m.s;
+  return x < 0 || y < 0 || x > sv.videoWidth || y > sv.videoHeight ? null : { x, y };
+}
+function setScHint(html) { const h = $('scHint'); if (!html) { h.hidden = true; return; } h.innerHTML = html; h.hidden = false; }
+function scClock() {
+  const d = sv.duration || 0;
+  $('scClock').textContent = `${mmss(sv.currentTime)} / ${mmss(d)}`;
+  if (document.activeElement !== $('scSeek')) $('scSeek').value = d ? Math.round(sv.currentTime / d * 1000) : 0;
+}
+sv.addEventListener('timeupdate', () => { scClock(); if (sv.paused) scDraw(); });
+sv.addEventListener('seeked', () => { scClock(); scDraw(); });
+$('scSeek').addEventListener('input', () => { if (G.abort || !sv.duration) return; sv.pause(); G.watch = null; sv.currentTime = $('scSeek').value / 1000 * sv.duration; });
+$('scBack').onclick = () => { if (G.abort) return; sv.pause(); sv.currentTime = Math.max(0, sv.currentTime - 10); };
+$('scFwd').onclick = () => { if (G.abort) return; sv.pause(); sv.currentTime = Math.min(sv.duration, sv.currentTime + 10); };
+
+function scDraw() {
+  if (sov.hidden) return;
+  const c = sctx, W = sov.width, H = sov.height, dpr = window.devicePixelRatio || 1;
+  c.clearRect(0, 0, W, H);
+  if (!sv.videoWidth) return;
+  const m = scMap(W, H), P = (x, y) => [m.ox + x * m.s, m.oy + y * m.s];
+  const cal = G.needCal != null ? G.files[G.needCal].cal : ((G.files[G.fi] && G.files[G.fi].cal) || G.cal);
+  const showField = cal && (G.phase === 'bases' || G.phase === 'team' || (G.phase === 'running' && !G.live));
+  if (showField) {
+    const line = (A, B, color, w, dash) => {
+      const a = F.project(cal.P, A), b = F.project(cal.P, B);
+      if (!(a[2] > 0 && b[2] > 0)) return;
+      const p = P(a[0], a[1]), q = P(b[0], b[1]);
+      c.strokeStyle = color; c.lineWidth = w * dpr; c.setLineDash(dash ? dash.map((v) => v * dpr) : []);
+      c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); c.setLineDash([]);
+    };
+    const bp = cal.basePath, s2 = bp / Math.SQRT2, far = bp * 2.6 / Math.SQRT2;
+    const A = G.phase === 'running' ? 0.35 : 0.95;
+    line([0, 0, 0], [far, far, 0], `rgba(255,255,255,${A})`, 2);
+    line([0, 0, 0], [-far, far, 0], `rgba(255,255,255,${A})`, 2);
+    line([s2, s2, 0], [0, 2 * s2, 0], `rgba(255,255,255,${A})`, 2);
+    line([0, 2 * s2, 0], [-s2, s2, 0], `rgba(255,255,255,${A})`, 2);
+    for (const side of ['R', 'L']) { const q = F.BOX[side]; for (let i = 0; i < 4; i++) line([...q[i], 0], [...q[(i + 1) % 4], 0], `rgba(64,211,190,${A})`, 1.6); }
+    if (G.phase !== 'running') {
+      const lane = F.lineQuad(6, bp - 1, -3, 5);
+      for (let i = 0; i < 4; i++) line([...lane[i], 0], [...lane[(i + 1) % 4], 0], 'rgba(255,179,143,.8)', 1.4, [5, 4]);
+    }
+  }
+  if (G.phase === 'bases' && !(cal && G.taps.length === 4)) {
+    G.taps.forEach(([x, y], i) => {
+      const p = P(x, y);
+      c.fillStyle = '#ffb38f'; c.strokeStyle = 'rgba(11,18,14,.9)'; c.lineWidth = 2 * dpr;
+      c.beginPath(); c.arc(p[0], p[1], 6 * dpr, 0, 7); c.fill(); c.stroke();
+      c.font = `800 ${Math.round(13 * dpr)}px ${getComputedStyle(document.documentElement).getPropertyValue('--body')}`;
+      c.fillStyle = '#fff'; c.fillText(BASE_SHORT[i], p[0] + 9 * dpr, p[1] - 8 * dpr);
+    });
+  }
+  if (G.phase === 'bases' && cal && G.taps.length === 4) {
+    G.taps.forEach(([x, y]) => { const p = P(x, y); c.fillStyle = '#ffb38f'; c.beginPath(); c.arc(p[0], p[1], 4 * dpr, 0, 7); c.fill(); });
+  }
+  const skel = (kp, color, w) => {
+    c.lineCap = 'round'; c.lineWidth = w; c.strokeStyle = color;
+    for (const [a, b] of EDGES) { if (kp[a * 3 + 2] < 0.15 || kp[b * 3 + 2] < 0.15) continue; const p = P(kp[a * 3], kp[a * 3 + 1]), q = P(kp[b * 3], kp[b * 3 + 1]); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); }
+  };
+  if (G.live) {
+    const { box, kp } = G.live;
+    if (box) { const p = P(box.cx - box.size / 2, box.cy - box.size / 2); c.strokeStyle = 'rgba(255,179,143,.9)'; c.lineWidth = 1.5 * dpr; c.setLineDash([6 * dpr, 4 * dpr]); c.strokeRect(p[0], p[1], box.size * m.s, box.size * m.s); c.setLineDash([]); }
+    if (kp) skel(kp, 'rgba(64,211,190,.95)', clamp(3 * dpr * m.s * 4, 1.5 * dpr, 4 * dpr));
+  }
+  const w = G.watch;
+  if (w && w.analysis && w.file === G.fi) {
+    const t = sv.currentTime;
+    const f = nearestFrame(w.analysis.frames, t);
+    if (f) skel(f.kp, 'rgba(64,211,190,.95)', clamp(w.analysis.H * m.s / 24, 1.4 * dpr, 4 * dpr));
+    if (w.ball && w.ball.found) {
+      const pts = w.ball.track.filter((q) => q.t <= t + 0.01);
+      pts.forEach((q, i) => { const p = P(q.x, q.y); c.fillStyle = `rgba(255,196,61,${0.4 + 0.6 * (i + 1) / pts.length})`; c.beginPath(); c.arc(p[0], p[1], (i === pts.length - 1 ? 5 : 3) * dpr, 0, 7); c.fill(); });
+    }
+    if (w.outcome && w.outcome.fit && t > w.tContact) {
+      c.strokeStyle = 'rgba(255,196,61,.55)'; c.lineWidth = 1.5 * dpr; c.setLineDash([4 * dpr, 4 * dpr]); c.beginPath();
+      let started = false;
+      for (let tt = w.outcome.fit.t0; tt <= Math.min(t, w.outcome.fit.t0 + 6); tt += 0.04) {
+        const X = F.predictAt(w.outcome.fit, tt); if (X[2] < -0.5) break;
+        const q = F.project(cal ? cal.P : G.cal.P, X); if (!(q[2] > 0)) break;
+        const p = P(q[0], q[1]); if (!started) { c.moveTo(p[0], p[1]); started = true; } else c.lineTo(p[0], p[1]);
+      }
+      c.stroke(); c.setLineDash([]);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- marking the bases
+sov.addEventListener('click', (e) => {
+  if (G.phase !== 'bases') return;
+  if (G.taps.length >= 4) return;
+  const p = scPoint(e); if (!p) return;
+  sv.pause();
+  const small = sov.getBoundingClientRect().width < 700;
+  if (small && !G.zoom) {
+    G.zoom = { x: p.x, y: p.y, z: 3 }; scZoomCSS(); scDraw();
+    setScHint(`Now tap <b>${BASES[G.taps.length]}</b> exactly`);
+    return;
+  }
+  G.taps.push([Math.round(p.x), Math.round(p.y)]);
+  G.zoom = null; scZoomCSS();
+  if (G.taps.length === 4) scCalibrate();
+  renderBases(); scDraw();
+});
+function scCalibrate() {
+  const content = SC.contentRect(sv);
+  const cal = F.calibrate({ taps: G.taps, basePath: G.bp, vw: sv.videoWidth, vh: sv.videoHeight, content });
+  if (!cal.ok) { G.baseErr = cal.error; G.taps = []; setCal(null); return; }
+  cal.print = SC.viewPrint(sv, content); cal.t = sv.currentTime;
+  G.baseErr = cal.warnings.join(' ');
+  setCal(cal);
+}
+function setCal(cal) {
+  if (G.needCal != null) G.files[G.needCal].cal = cal;
+  else { G.cal = cal; G.files.forEach((f, i) => { if (i === 0 || (f.cal && f.cal.shared)) f.cal = cal && { ...cal, shared: i > 0 }; }); }
+}
+function backToBases() { if (G.phase === 'team') { G.phase = 'bases'; renderScout(); } }
+$('scUndo').onclick = () => { if (G.abort && G.needCal == null) return; backToBases(); if (G.zoom) { G.zoom = null; scZoomCSS(); } else if (G.taps.length) { G.taps.pop(); setCal(null); G.baseErr = ''; } renderBases(); scDraw(); };
+$('scRedo').onclick = () => { if (G.abort && G.needCal == null) return; backToBases(); G.taps = []; G.zoom = null; scZoomCSS(); setCal(null); G.baseErr = ''; renderBases(); scDraw(); };
+$('scBP').innerHTML = [46, 50, 60, 65, 70, 80, 90].map((v) => `<option value="${v}">${v} ft</option>`).join('');
+$('scBP').onchange = () => { G.bp = +$('scBP').value; if (G.taps.length === 4) scCalibrate(); renderBases(); scDraw(); };
+$('scBasesOk').onclick = () => {
+  if (G.needCal != null) { const r = G.calDone; G.needCal = null; G.calDone = null; G.phase = 'running'; renderScout(); r && r(); return; }
+  G.phase = 'team'; renderScout(); scDraw(); readTeams();
+};
+function renderBases() {
+  const n = G.taps.length, cal = (G.needCal != null ? G.files[G.needCal].cal : G.cal);
+  $('scBP').value = String(G.bp || 60);
+  $('scBaseChips').innerHTML = BASE_SHORT.map((b, i) => `<span class="chip basechip" aria-pressed="${i < n}" aria-current="${i === n}">${i < n ? '✓ ' : ''}${b}</span>`).join('');
+  const small = sov.getBoundingClientRect().width < 700;
+  $('scBaseText').innerHTML = G.needCal != null ? `Part ${G.needCal + 1} shows a different camera view, so mark the bases again for it. ` : '';
+  $('scBaseText').innerHTML += n < 4
+    ? `Move to a frame where all four bases are visible and nobody is standing on them, then tap <b>${BASES[n]}</b>${small ? ' (the first tap zooms in)' : ''}.`
+    : cal ? 'Check the white lines: they should sit on the foul lines and base paths, and the green boxes on the batter’s boxes. If they are off, start over and tap the middle of each base.' : '';
+  $('scBaseErr').hidden = !G.baseErr; $('scBaseErr').textContent = G.baseErr;
+  $('scBasesOk').hidden = !(n === 4 && cal);
+  $('scBaseAside').textContent = n === 4 && cal ? 'field set' : `${n} of 4`;
+  if (G.phase === 'bases') setScHint(G.zoom ? `Now tap <b>${BASES[n]}</b> exactly` : n < 4 ? `Tap <b>${BASES[n]}</b>` : null);
+}
+
+// ---------------------------------------------------------------- the scoreboard
+async function canClaudeSee() { if (!S.sample) return false; const lim = await S.sample.limits().catch(() => null); return !!(lim && lim.images); }
+async function claudeBoard(canvas) {
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+  const data = await S.sample.json(SCORE_PROMPT, { images: blob, modelTier: 'quick' });
+  return data && data.found !== false ? data : null;
+}
+async function readTeams() {
+  G.teams = null; G.teamNote = 'Reading the GameChanger scoreboard…'; renderTeam(true);
+  try {
+    const corner = OV.cornerCanvas(sv), L = OV.layout(corner);
+    let teams = null;
+    if (await canClaudeSee()) {
+      const d = await claudeBoard(corner);
+      const ts = d && Array.isArray(d.teams) ? d.teams.map((t) => t && t.abbr && String(t.abbr).trim()).filter(Boolean) : [];
+      if (ts.length === 2) teams = ts;
+    } else if (S.standalone && L && L.ok && L.teams) {
+      const read = await Promise.all(L.teams.map((r) => OV.ocrLine(OV.rowCanvas(corner, r, { part: 0.45 })).then(OV.parseTeam).catch(() => null)));
+      if (read[0] && read[1] && read[0] !== read[1]) teams = read;
+    }
+    G.teams = teams;
+    G.boardSeen = !!(L && L.ok);
+    if (teams) {
+      const ours = slug(S.field.ourTeam), oi = teams.findIndex((t) => slug(t) === ours);
+      G.target = oi >= 0 ? 1 - oi : 'all';
+      G.teamNote = oi >= 0 ? `Scoreboard read: ${teams[0]} at ${teams[1]}. Scouting the other team’s hitters.` : `Scoreboard read: ${teams[0]} at ${teams[1]}. Pick the team to scout.`;
+    } else G.teamNote = G.boardSeen ? 'Found the scoreboard but could not read the team names, so every batter will be scouted. Names may need typing at the end.' : 'No GameChanger scoreboard found, so every batter will be scouted and you will type the names at the end.';
+  } catch (e) { G.teams = null; G.teamNote = 'Could not read the scoreboard, so every batter will be scouted.'; }
+  if (!G.game) { const other = G.teams && G.target !== 'all' ? G.teams[1 - G.target] : ''; G.game = `${other ? 'vs ' + other + ', ' : ''}${today()}`; }
+  renderTeam(false); renderRun();
+}
+function renderTeam(busy) {
+  const el = $('scTeamStatus'); el.classList.toggle('busy', !!busy); el.lastElementChild.textContent = G.teamNote;
+  const opts = [...(G.teams || []).map((t, i) => [i, `${t} hitters${slug(t) === slug(S.field.ourTeam) && S.field.ourTeam ? ' (us)' : ''}`]), ['all', 'Every batter']];
+  $('scTeamChips').innerHTML = opts.map(([v, l]) => `<button type="button" class="chip" data-v="${v}" aria-pressed="${String(G.target) === String(v)}">${esc(l)}</button>`).join('');
+  $('scTeamChips').querySelectorAll('button').forEach((b) => (b.onclick = () => {
+    G.target = b.dataset.v === 'all' ? 'all' : +b.dataset.v;
+    if (G.teams && G.target !== 'all' && (!G.game || /^vs \S+, /.test(G.game))) G.game = `vs ${G.teams[1 - G.target]}, ${today()}`;
+    renderTeam(false);
+  }));
+  if ($('scGame').value !== G.game) $('scGame').value = G.game;
+}
+$('scGame').addEventListener('input', () => { G.game = $('scGame').value; });
+
+// a name for each play's batter: the batter row of the scoreboard, read once per distinct row
+function boardFor(play, corner) {
+  const L = OV.layout(corner);
+  play.board = L && L.ok ? { batting: L.batting } : null;
+  if (L && L.ok) {
+    play.print = OV.rowPrint(corner, L.batter);
+    play.preview = OV.rowPreview(corner, L.batter);
+  }
+  let cl = play.print ? G.clusters.find((c) => OV.samePrint(c.print, play.print) > 0.93) : null;
+  if (!cl) {
+    cl = { id: G.clusters.length + 1, print: play.print || null, name: '', number: '', src: '', plays: [] };
+    G.clusters.push(cl);
+    cl.reading = readCluster(cl, corner, L).catch(() => {});
+  }
+  cl.plays.push(play); play.cluster = cl;
+  if (play.board && play.board.batting != null && G.teams) play.team = G.teams[play.board.batting];
+  return L;
+}
+async function readCluster(cl, corner, L) {
+  if (await canClaudeSee()) {
+    const d = await claudeBoard(corner);
+    if (d && d.batter && d.batter.name) {
+      cl.name = String(d.batter.name).trim(); cl.number = d.batter.number != null ? String(d.batter.number).replace(/^#/, '') : ''; cl.src = 'Claude';
+      const bt = Array.isArray(d.teams) ? d.teams.find((t) => t && t.batting) : null;
+      if (bt && bt.abbr) cl.team = String(bt.abbr).trim();
+      if (d.count) cl.count = d.count;
+      if (d.inning) cl.inning = (d.half === 'top' ? 'Top ' : d.half === 'bottom' ? 'Bot ' : '') + d.inning;
+    }
+  } else if (S.standalone && L && L.ok) {
+    const txt = await OV.ocrLine(OV.rowCanvas(corner, L.batter, { part: 0.66 }));
+    const b = OV.parseBatter(txt);
+    if (b) { cl.name = b.name; cl.number = b.number; cl.src = 'OCR'; }
+  }
+  for (const p of cl.plays) applyCluster(p);
+  renderResults();
+}
+function applyCluster(p) {
+  const cl = p.cluster; if (!cl) return;
+  if (p.nameSrc !== 'typed') { if (cl.name) { p.name = cl.name; p.number = cl.number; p.nameSrc = cl.src; } }
+  if (!p.team) p.team = cl.team || '';
+  if (!p.count && cl.count) p.count = cl.count;
+  if (!p.inning && cl.inning) p.inning = cl.inning;
+}
+
+// ---------------------------------------------------------------- running it
+$('scGo').onclick = () => scoutRun();
+$('scStop').onclick = $('scStop2').onclick = () => { if (G.abort && G.abort.abort) G.abort.abort(); };
+async function wakeOn() { try { if (navigator.wakeLock && !G.wake) { G.wake = await navigator.wakeLock.request('screen'); G.wake.addEventListener('release', () => { G.wake = null; }); } } catch {} }
+function wakeOff() { try { G.wake && G.wake.release(); } catch {} G.wake = null; }
+document.addEventListener('visibilitychange', () => { if (G.abort && document.visibilityState === 'visible') wakeOn(); });
+function scProgress(text, p) { $('scProg').hidden = false; $('scProgText').textContent = text; $('scProgBar').style.width = Math.round(clamp(p, 0, 1) * 100) + '%'; }
+
+async function scoutRun() {
+  if (G.abort || !G.cal) return;
+  const ctl = new AbortController(); G.abort = ctl;
+  G.phase = 'running'; G.watch = null; G.startedAt = performance.now();
+  G.stats = { checked: 0, found: 0, other: 0, noswing: 0, nobatter: 0, foul: 0, videoDone: 0, perPlay: [] };
+  const total = G.files.reduce((s, f) => s + (f.dur || 0), 0) || 1;
+  renderScout(); wakeOn();
+  try {
+    scProgress('Loading the pose model (first time only)…', S.poseProgress);
+    const pose = await ensurePose();
+    for (let i = 0; i < G.files.length; i++) {
+      if (ctl.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+      const it = G.files[i];
+      if (it.status === 'done') { G.stats.videoDone += it.dur || 0; continue; }
+      if (i !== G.fi) { if (!(await scOpen(i, 0))) throw new Error('Part ' + (i + 1) + ' could not be opened'); }
+      // later parts: same camera view as the one marked? if not, ask for the bases again
+      if (!it.cal) {
+        await waitFrame(sv, Math.min(sv.duration * 0.1, 20));
+        const sameSize = sv.videoWidth === G.cal.vw && sv.videoHeight === G.cal.vh;
+        const look = sameSize ? SC.viewPrint(sv, G.cal.content) : null;
+        let sim = 0; if (look) for (let k = 0; k < look.length; k++) sim += look[k] * G.cal.print[k];
+        if (sameSize && sim > 0.55) it.cal = { ...G.cal, shared: true };
+        else {
+          $('scProg').hidden = true;
+          G.needCal = i; G.taps = []; G.phase = 'bases'; wakeOff();
+          renderScout(); scDraw();
+          toast(`Part ${i + 1} has a different camera view. Mark the bases for it.`, 5000);
+          await new Promise((res) => { G.calDone = res; ctl.signal.addEventListener('abort', res, { once: true }); });
+          if (ctl.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+          wakeOn();
+        }
+      }
+      const cal = it.cal;
+      const partTxt = G.files.length > 1 ? `part ${i + 1} of ${G.files.length}, ` : '';
+      // pass 1: find the plays
+      const series = await SC.scanVideo({
+        video: sv, cal, signal: ctl.signal, onProgress: (p) => {
+          const done = G.stats.videoDone + p.t;
+          scProgress(`Watching the game (${partTxt}${mmss(p.t)} of ${mmss(it.dur)})${p.eta != null ? ` · about ${Math.max(1, Math.round(p.eta / 60))} min to the end of this pass` : ''}`, done / total);
+        },
+      });
+      const cands = SC.findRuns(series);
+      it.cands = cands.length;
+      // pass 2: check each one
+      for (let k = 0; k < cands.length; k++) {
+        if (ctl.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+        const cand = cands[k], t1 = performance.now();
+        const avg = G.stats.perPlay.length ? G.stats.perPlay.reduce((a, b) => a + b, 0) / G.stats.perPlay.length : 20;
+        const head = `Checking play ${k + 1} of ${cands.length}${G.files.length > 1 ? ` in part ${i + 1}` : ''} · about ${Math.max(1, Math.round((cands.length - k) * avg / 60))} min left`;
+        scProgress(head, (G.stats.videoDone + it.dur * (k / cands.length)) / total);
+        G.stats.checked++;
+        await waitFrame(sv, Math.max(0, cand.t - 2.2));
+        const play = { id: 'p' + i + '_' + k + '_' + Math.round(cand.t * 10), file: i, cand, name: '', number: '', team: '', nameSrc: '', include: false, vw: sv.videoWidth, vh: sv.videoHeight, fileName: it.file.name };
+        const corner = OV.cornerCanvas(sv);
+        boardFor(play, corner);
+        // the other team's at-bat: skip it before the slow part
+        if (G.target !== 'all' && G.teams) {
+          let bat = play.board ? play.board.batting : null;
+          if (bat == null && play.cluster && play.cluster.reading && (await canClaudeSee())) { await play.cluster.reading; const tm = play.cluster.team; bat = tm ? G.teams.findIndex((x) => slug(x) === slug(tm)) : null; if (bat < 0) bat = null; }
+          if (bat != null && bat !== G.target) { G.stats.other++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
+        }
+        const r = await SC.analyzePlay({
+          video: sv, pose, cal, cand, field: S.field, signal: ctl.signal,
+          onProgress: (p) => { if (p.kp || p.box) { G.live = { kp: p.kp, box: p.box }; scDraw(); } scProgress(`${head} · ${p.stage}`, (G.stats.videoDone + it.dur * ((k + clamp(p.p || 0, 0, 1) * 0.9) / cands.length)) / total); },
+        });
+        G.live = null; scDraw();
+        G.stats.perPlay.push((performance.now() - t1) / 1000);
+        if (r.error) { if (r.error === 'no_swing') G.stats.noswing++; else G.stats.nobatter++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
+        if (r.outcome && r.outcome.foul) { G.stats.foul++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
+        Object.assign(play, r);
+        play.bats = r.bats;
+        if (r.outcome) {
+          play.x = r.outcome.x; play.y = r.outcome.y; play.type = r.outcome.type;
+          play.include = r.outcome.conf !== 'low';
+          if (r.outcome.tContact) play.tContact = r.outcome.tContact;
+        } else { play.x = null; play.y = null; play.type = r.ball && r.ball.type || null; play.include = false; play.needsPlace = true; }
+        applyCluster(play);
+        G.plays.push(play); G.stats.found++;
+        renderResults(); renderRun();
+      }
+      it.status = 'done'; G.stats.videoDone += it.dur || 0; renderParts();
+    }
+    G.phase = 'done';
+    await Promise.all(G.clusters.map((c) => c.reading));
+  } catch (e) {
+    G.live = null;
+    if (e && e.name === 'AbortError') G.phase = 'stopped';
+    else { console.error(e); G.phase = 'stopped'; toast('Scouting stopped: ' + (e && e.message || e), 6000); }
+  } finally {
+    G.abort = null; wakeOff(); $('scProg').hidden = true; G.needCal = null;
+    G.runSecs = (performance.now() - G.startedAt) / 1000;
+    renderScout(); scDraw();
+  }
+}
+
+// ---------------------------------------------------------------- panels
+function renderScout() {
+  const ph = G.phase, has = G.files.length > 0;
+  $('scIntro').hidden = has;
+  $('scBases').hidden = !(ph === 'bases' || ph === 'team');
+  $('scTeam').hidden = ph !== 'team';
+  $('scRun').hidden = !(ph === 'team' || ph === 'running' || ph === 'done' || ph === 'stopped' || G.needCal != null);
+  $('scResults').hidden = !G.plays.length && !(ph === 'done' || ph === 'stopped');
+  $('scChange').hidden = !!G.abort;
+  if (ph === 'bases') { renderBases(); }
+  else { setScHint(null); if (ph === 'team') { $('scBaseText').textContent = 'Bases marked.'; $('scBaseChips').innerHTML = ''; $('scBaseErr').hidden = true; $('scBasesOk').hidden = true; $('scBaseAside').textContent = 'field set'; } }
+  if (ph === 'team') renderTeam(false);
+  renderRun(); renderResults(); renderParts();
+}
+function renderRun() {
+  const ph = G.phase, total = G.files.reduce((s, f) => s + (f.dur || 0), 0);
+  const st = G.stats;
+  $('scGo').hidden = ph === 'running' || ph === 'done' || ph === 'stopped';
+  $('scGo').disabled = !G.cal;
+  $('scStop2').hidden = !G.abort;
+  if (G.needCal != null) $('scGo').hidden = true;
+  $('scRunAside').textContent = total ? mmss(total) + ' of video' : '';
+  let html = '';
+  if (ph === 'team') {
+    const lo = Math.max(2, Math.round(total * 0.3 / 60)), hi = Math.max(4, Math.round(total * 0.6 / 60));
+    html = `This takes roughly ${lo}–${hi} minutes on a phone for ${mmss(total)} of video. Keep this screen open and the phone plugged in; the screen stays on while it works.`;
+  } else if (st) {
+    const skipped = st.other + st.noswing + st.nobatter + st.foul;
+    const lead = G.needCal != null ? `Paused until the bases are marked for part ${G.needCal + 1}.` : ph === 'running' ? 'Working on it. Balls in play show up below as they are found.' : ph === 'done' ? `Done in ${Math.max(1, Math.round((G.runSecs || 0) / 60))} min.` : 'Stopped. What was found so far is below.';
+    html = `${lead}<div class="stat3"><div><b class="num">${st.found}</b>balls in play</div><div><b class="num">${st.checked}</b>plays checked</div><div><b class="num">${skipped}</b>skipped</div></div>`
+      + (skipped ? `<p class="small muted" style="margin:8px 0 0">Skipped: ${[st.other && `${st.other} by the other team`, st.noswing && `${st.noswing} with no swing (walks, hit by pitch)`, st.foul && `${st.foul} foul`, st.nobatter && `${st.nobatter} where the batter could not be followed`].filter(Boolean).join(', ')}.</p>` : '')
+      + (!G.abort && (ph === 'done' || ph === 'stopped') ? `<div class="actions"><label class="btn" for="scFile">Scout another game</label></div>` : '');
+  }
+  $('scRunText').innerHTML = html;
+}
+function playZone(p) { if (p.x == null || !p.bats) return null; return M.ZONE_LABEL[M.ZONES[M.zoneOf(M.pullAngle(M.sprayAngle(p.x, p.y), p.bats))]]; }
+function renderResults() {
+  if ($('scResults').hidden && !G.plays.length) return;
+  if (G.plays.length) $('scResults').hidden = false;
+  const inc = G.plays.filter((p) => p.include && p.x != null);
+  $('scField').innerHTML = fieldSVG({ id: 'sc', dots: inc.map((p) => ({ x: p.x, y: p.y, type: p.type })) });
+  $('scLegend').innerHTML = `<span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="var(--ink)"/></svg>Ground ball</span><span><svg width="12" height="12"><path d="M6 1 L11 10 L1 10 Z" fill="var(--ink)"/></svg>Line drive</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.2" fill="none" stroke="var(--ink)" stroke-width="2"/></svg>Fly ball</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="3.6" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="2 1.5"/></svg>Pop up</span>`;
+  $('scResAside').textContent = G.plays.length ? `${inc.length} of ${G.plays.length} set to save` : '';
+  const focus = document.activeElement && document.activeElement.closest && document.activeElement.closest('.play');
+  if (focus && $('scList').contains(focus)) { renderSaveState(); return; }       // don't redraw under the user's typing
+  $('scList').innerHTML = G.plays.length ? G.plays.map((p) => {
+    const o = p.outcome, z = playZone(p);
+    const conf = o ? { high: '<span class="flag good">clear track</span>', medium: '<span class="flag">good track</span>', low: '<span class="flag clay">rough track, check it</span>' }[o.conf] : '<span class="flag clay">ball not followed, tap Adjust to place it</span>';
+    return `<div class="play ${p.include ? '' : 'off'}" data-id="${esc(p.id)}">
+      ${p.thumb && p.thumb.url ? `<img class="thumb" src="${p.thumb.url}" alt="Batter at contact">` : '<div class="thumb"></div>'}
+      <div style="min-width:0">
+        <div class="top"><input type="text" class="pn" value="${esc(p.name)}" placeholder="Batter name" list="rosterList" aria-label="Batter name" ${p.savedId ? 'disabled' : ''}><input class="pnum" inputmode="numeric" value="${esc(p.number)}" placeholder="#" aria-label="Number" ${p.savedId ? 'disabled' : ''}>${p.savedId ? '<span class="flag good">saved</span>' : `<label class="inc"><input type="checkbox" class="pinc" ${p.include ? 'checked' : ''} ${p.x == null ? 'disabled' : ''}>Save</label>`}</div>
+        ${p.preview ? `<img class="board" src="${p.preview}" alt="Scoreboard batter line at this at-bat">` : ''}
+        <div class="meta"><span class="flag">bats ${esc(p.bats || '?')}</span>${p.type ? `<span class="flag">${esc(M.TYPE_LABEL[p.type])}</span>` : ''}${z ? `<span>${esc(z)}${o ? ` · ${p.moved ? 'placed by you' : '~' + Math.round(Math.hypot(p.x, p.y)) + ' ft'}` : ''}</span>` : ''}${p.moved ? '' : conf}<span class="muted">${G.files.length > 1 ? 'part ' + (p.file + 1) + ' · ' : ''}${mmss(p.tContact)}</span></div>
+        <div class="acts"><button type="button" class="linkish pw">Watch</button>${p.savedId ? '' : '<button type="button" class="linkish pm">Adjust</button>'}</div>
+      </div></div>`;
+  }).join('') : `<p class="empty">${G.phase === 'running' ? 'Nothing yet.' : 'No balls in play were found. Check that the bases were marked on the right spots and that the video shows the batter and the first-base line.'}</p>`;
+  $('scList').querySelectorAll('.play').forEach((row) => {
+    const p = G.plays.find((x) => x.id === row.dataset.id); if (!p) return;
+    const nm = row.querySelector('.pn'), nu = row.querySelector('.pnum'), cb = row.querySelector('.pinc');
+    nm && nm.addEventListener('input', () => {
+      p.name = nm.value; p.nameSrc = 'typed';
+      // same scoreboard line, same batter: fill the others that were not typed by hand
+      if (p.cluster) for (const q of p.cluster.plays) if (q !== p && q.nameSrc !== 'typed' && !q.savedId) { q.name = p.name; q.number = p.number; const el = $('scList').querySelector(`.play[data-id="${CSS.escape(q.id)}"] .pn`); if (el) el.value = q.name; }
+      const h = Object.values(S.hitters).find((x) => slug(x.name) === slug(p.name)); if (h && !p.number) { p.number = h.number || ''; nu.value = p.number; }
+      renderSaveState();
+    });
+    nu && nu.addEventListener('input', () => { p.number = nu.value; p.nameSrc = 'typed'; renderSaveState(); });
+    cb && cb.addEventListener('change', () => { p.include = cb.checked; row.classList.toggle('off', !p.include); renderField(); renderSaveState(); });
+    row.querySelector('.pw').onclick = () => scWatch(p);
+    const adj = row.querySelector('.pm'); if (adj) adj.onclick = () => scAdjust(p);
+  });
+  renderSaveState();
+}
+function renderField() {
+  const inc = G.plays.filter((p) => p.include && p.x != null);
+  $('scField').innerHTML = fieldSVG({ id: 'sc', dots: inc.map((p) => ({ x: p.x, y: p.y, type: p.type })) });
+  $('scResAside').textContent = `${inc.length} of ${G.plays.length} set to save`;
+}
+function renderSaveState() {
+  const todo = G.plays.filter((p) => p.include && !p.savedId && p.x != null);
+  const noName = todo.filter((p) => !String(p.name || '').trim());
+  const btn = $('scSave');
+  btn.disabled = !todo.length || !!noName.length || !S.db || !S.canWrite || G.saving;
+  btn.textContent = todo.length ? `Save ${todo.length} to spray charts` : 'Save to spray charts';
+  $('scSaveNote').textContent = !S.db ? (S.standalone ? 'This browser is blocking storage, so nothing can be saved here.' : 'Saving needs Claude (open this page in the Claude app or on claude.ai).')
+    : !S.canWrite ? 'You can view this team’s data but not add to it.'
+    : noName.length ? `Add the batter’s name for ${noName.length} of them.` : G.phase === 'running' && todo.length ? 'You can save now or when it finishes.' : '';
+}
+
+async function scWatch(p) {
+  if (G.abort) { toast('Watch is available when scouting finishes or is stopped.'); return; }
+  if (p.file !== G.fi) { if (!(await scOpen(p.file))) return; }
+  G.watch = p; G.zoom = null; scZoomCSS();
+  $('scStage').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const start = Math.max(0, p.tContact - 1.6), end = Math.min(sv.duration, p.tContact + 2.2);
+  await waitFrame(sv, start);
+  sv.playbackRate = 0.5;
+  try { await sv.play(); } catch {}
+  const tick = () => { scDraw(); if (sv.currentTime >= end) { sv.pause(); sv.playbackRate = 1; scDraw(); return; } if (!sv.paused) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+function scAdjust(p) {
+  const t = { x: p.x, y: p.y, type: p.type, bats: p.bats };
+  const render = () => {
+    $('adField').innerHTML = fieldSVG({ id: 'ad', marker: t.x != null ? { x: t.x, y: t.y } : null, dots: [] });
+    $('adField').querySelector('svg').addEventListener('click', (e) => { const q = svgPoint($('adField').querySelector('svg'), e); t.x = Math.round(q.x * 10) / 10; t.y = Math.round(q.y * 10) / 10; render(); });
+    $('adType').innerHTML = ['GB', 'LD', 'FB', 'PU', 'BU'].map((v) => `<button type="button" class="chip" data-v="${v}" aria-pressed="${t.type === v}">${M.TYPE_LABEL[v]}</button>`).join('');
+    $('adType').querySelectorAll('button').forEach((b) => (b.onclick = () => { t.type = b.dataset.v; render(); }));
+    $('adBats').querySelectorAll('button').forEach((b) => { b.setAttribute('aria-pressed', b.dataset.v === t.bats); b.onclick = () => { t.bats = b.dataset.v; render(); }; });
+  };
+  modal(`<h2>Adjust this ball in play</h2><p class="small muted" style="margin:-4px 0 10px">${esc(p.name || 'Batter')}${p.tContact != null ? ' · ' + mmss(p.tContact) : ''}. Tap the field where the ball went.</p>
+    <div class="fieldbox tap" id="adField"></div><div class="sublabel">Batted ball</div><div class="chips" id="adType"></div>
+    <div class="sublabel">Bats</div><div class="seg" id="adBats"><button type="button" data-v="R">Right</button><button type="button" data-v="L">Left</button></div>
+    <div class="actions"><button class="btn primary" id="adSave">Use this</button><button class="btn ghost" id="adCancel">Cancel</button></div>`, (close) => {
+    render();
+    $('adCancel').onclick = close;
+    $('adSave').onclick = () => {
+      if (t.x == null || !t.type) { toast('Tap where the ball went and pick the batted-ball type.'); return; }
+      Object.assign(p, { x: t.x, y: t.y, type: t.type, bats: t.bats, moved: true, include: true, needsPlace: false });
+      close(); renderResults();
+    };
+  });
+}
+
+$('scSave').onclick = scoutSave;
+async function scoutSave() {
+  if (!S.db || G.saving) return;
+  const todo = G.plays.filter((p) => p.include && !p.savedId && p.x != null && String(p.name || '').trim());
+  if (!todo.length) return;
+  G.saving = true; renderSaveState();
+  let n = 0;
+  try {
+    for (const p of todo) {
+      const b = { name: p.name.trim(), number: String(p.number || '').trim(), team: String(p.team || '').trim() };
+      const key = hitterKey(b), now = Date.now(), id = S.db.collection('atbats').doc().id, a = p.analysis, o = p.outcome || {};
+      const ev = { ...a.events }; if (o.tContact) { ev.tContact = o.tContact; ev.contactSource = 'ball'; }
+      const doc = {
+        hitterKey: key, hitter: b, bats: p.bats, game: G.game || '', count: p.count || '', inning: p.inning || '',
+        clip: { name: p.fileName || '', t: Math.round((p.tContact || 0) * 100) / 100 },
+        outcome: { kind: 'inplay', type: p.type, result: null, x: p.x, y: p.y },
+        createdAt: now, updatedAt: now, createdBy: S.uid || null,
+        swing: { events: roundObj(ev), metrics: roundObj(a.metrics), H: Math.round(a.H), frames: a.frames.length },
+        features: roundObj(M.featureVector({ metrics: a.metrics, events: ev })),
+        ball: p.ball && p.ball.found ? { found: true, air: p.ball.air, type: p.ball.type, n: p.ball.track.length } : { found: false },
+        auto: p.outcome && !p.moved ? { angle: o.angle, dist: o.dist, launch: o.launch, mph: o.mph, conf: o.conf } : null,
+        source: 'scout', prediction: null, hasMedia: true,
+        needsReview: !p.moved && (!p.outcome || p.outcome.conf === 'low'),
+      };
+      await S.db.doc('atbatMedia/' + id).set(SC.mediaFor(p, p.vw, p.vh));
+      await S.db.doc('atbats/' + id).set(doc);
+      const prev = S.hitters[key] || {};
+      await S.db.doc('hitters/' + key).set({ name: b.name, number: b.number, team: b.team, bats: prev.bats && prev.bats !== p.bats ? 'S' : p.bats, updatedAt: now, firstSeen: prev.firstSeen || now });
+      p.savedId = id; n++;
+    }
+    toast(`Saved ${n} ball${n === 1 ? '' : 's'} in play to the spray charts.`);
+  } catch (e) {
+    toast(e && e.code === 'quota_exceeded' ? `Saved ${n}. The team database is full; delete old at-bats to make room.` : `Saved ${n}. Could not save the rest: ` + (e && (e.message || e.code) || 'unknown error'), 6000);
+  } finally { G.saving = false; renderResults(); }
+}
+window.__scout = { G, scoutFiles, scCalibrate, renderScout, scoutRun };
+
 // ======================================================================= render all
 function renderAll() {
   renderIntro();
@@ -1506,6 +2197,8 @@ function renderAll() {
 renderAll();
 renderSync();
 initCaps();
+if (location.hash === '#hitters') setView('hitters');
+else if (location.hash === '#scout') setView('scout');
 </script>
 </body>
 </html>

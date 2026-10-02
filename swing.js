@@ -115,6 +115,14 @@ class Tracker {
   }
 }
 
+// find a person near (x, y) at time t (a crop of about `size` px); null if nobody there
+export async function acquireAt(video, pose, x, y, size, t) {
+  const tr = new Tracker(pose, video);
+  if (t != null) await waitFrame(video, t);
+  return tr.acquire(x, y, size);
+}
+export { extent, hipCenter, headCenter };
+
 function frameState(kp, prev) {
   const e = extent(kp);
   if (!e) return null;
@@ -123,9 +131,10 @@ function frameState(kp, prev) {
 }
 
 // ---------------------------------------------------------------- main entry
-export async function analyzeSwing({ video, pose, seed, onProgress = () => {}, signal, hint }) {
+export async function analyzeSwing({ video, pose, seed, onProgress = () => {}, signal, hint, tEnd }) {
   const tr = new Tracker(pose, video);
   const vh = video.videoHeight, dur = video.duration;
+  const tStop = Math.min(dur, tEnd != null ? tEnd : dur);      // a full game: only scan this window
   const check = () => { if (signal && signal.aborted) throw new DOMException('Stopped', 'AbortError'); };
 
   // 1. acquire the batter at the tapped point
@@ -138,11 +147,11 @@ export async function analyzeSwing({ video, pose, seed, onProgress = () => {}, s
 
   // 2. coarse scan forward to find the swing
   const t0 = seed.t;
-  const span = Math.max(0.5, dur - t0);
+  const span = Math.max(0.5, tStop - t0);
   const step = span <= 16 ? 0.1 : Math.min(0.25, span / 160);
   const coarse = [];
   let lost = 0, hip0 = null;
-  for (let t = t0; t <= dur - 0.02; t += step) {
+  for (let t = t0; t <= tStop - 0.02; t += step) {
     check();
     await waitFrame(video, t);
     const kp = await tr.infer(cx, cy, size);
