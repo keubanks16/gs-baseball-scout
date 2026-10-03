@@ -51,9 +51,12 @@ export function layout(canvas) {
   }
   const rows = bands.filter((b) => b.x1 - b.x0 > b.h * 2);
   if (rows.length < 3) return { rows, ok: false };
-  // GameChanger: header, away team, home team, pitcher, batter (the last row)
-  const batter = rows[rows.length - 1];
-  const teams = rows.length >= 5 ? [rows[rows.length - 4], rows[rows.length - 3]] : null;
+  // GameChanger: the header, the away team, the home team, then one or two player lines.
+  // With two, they follow the team order (away first), so the batting team's line is the
+  // batter and the other is the pitcher. With one, it is usually the batter.
+  const nPlayers = rows.length >= 5 ? 2 : 1;
+  const players = rows.slice(rows.length - nPlayers);
+  const teams = rows.length >= 4 ? [rows[rows.length - nPlayers - 2], rows[rows.length - nPlayers - 1]] : null;
   // the orange "at bat" dot sits just right of one team's name, in the left part of the board
   let batting = null;
   if (teams) {
@@ -69,7 +72,10 @@ export function layout(canvas) {
     if (hits[0] >= need && hits[0] > hits[1] * 3) batting = 0;
     else if (hits[1] >= need && hits[1] > hits[0] * 3) batting = 1;
   }
-  return { ok: true, rows, batter, teams, batting, box: { x0: xa, x1: xb, y0: rows[0].y0, y1: batter.y1 } };
+  const batter = nPlayers === 1 ? players[0] : batting != null ? players[batting] : null;
+  const pitcher = nPlayers === 2 && batter ? players[1 - players.indexOf(batter)] : null;
+  const last = rows[rows.length - 1];
+  return { ok: true, rows, teams, players, batting, batter, pitcher, batterSure: !!batter && nPlayers === 2, box: { x0: xa, x1: xb, y0: rows[0].y0, y1: last.y1 } };
 }
 
 // a clean crop of one row for OCR: grey, inverted (dark text on white), text about 40 px tall
@@ -126,6 +132,9 @@ export function parseBatter(text) {
   if (!name || name.length < 2) return null;
   return { name, number };
 }
+// the pitcher's line ends with a pitch count ("P: 11"), the batter's with "0 for 0"
+export const isPitcherLine = (text) => /\bP\s*[:;.]\s*\d/.test(String(text || '')) && !/\d\s*for\s*\d/i.test(String(text || ''));
+export const isBatterLine = (text) => /\d\s*for\s*\d/i.test(String(text || ''));
 export function parseTeam(text) {
   const t = String(text || '').trim();
   const m = t.match(/^[^A-Za-z0-9]*([A-Z0-9][A-Za-z0-9]{1,6})/);

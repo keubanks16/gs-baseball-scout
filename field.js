@@ -255,46 +255,86 @@ export function landing(X0, V, k = DRAG, dt = 0.005) {
 }
 export function predictAt(fit, t) { return traj(fit.X0, fit.V, [Math.max(0, t - fit.t0)])[0]; }
 
-// direction of a ball on the ground: map its track straight onto the field
-function groundDir(cal, track, X0) {
-  let sx = 0, sy = 0;
-  for (const p of track) {
-    const g = toField(cal, p.x, p.y); if (!g) continue;
-    const dx = g[0] - X0[0], dy = g[1] - X0[1], d = Math.hypot(dx, dy);
-    if (d < 2) continue;
-    sx += dx; sy += dy;
-  }
-  return Math.hypot(sx, sy) > 1 ? Math.atan2(sx, sy) * 180 / Math.PI : null;
+// A ball on the ground: its track maps straight onto the field. Fit a line from the plate
+// with distance s(t) = b t + c t^2 along it, and measure how well that explains the pixels.
+export function groundFit(cal, track, t0, prior = [0, 1.5]) {
+  const kpx = cal.content.w / 2344;
+  const pts = track.filter((p) => p.t > t0 - 0.01).map((p) => ({ tau: p.t - t0, g: toField(cal, p.x, p.y), p })).filter((q) => q.g && q.g[1] > -15 && Math.hypot(q.g[0], q.g[1]) < 450);
+  if (pts.length < 4) return null;
+  const evalAt = (deg) => {
+    const r = deg * Math.PI / 180, d = [Math.sin(r), Math.cos(r)];
+    const sv = pts.map((q) => (q.g[0] - prior[0]) * d[0] + (q.g[1] - prior[1]) * d[1]);
+    // least squares for s = b tau + c tau^2
+    let a11 = 0, a12 = 0, a22 = 0, r1 = 0, r2 = 0;
+    pts.forEach((q, k) => { const t = q.tau, t2 = t * t; a11 += t2; a12 += t2 * t; a22 += t2 * t2; r1 += t * sv[k]; r2 += t2 * sv[k]; });
+    const det = a11 * a22 - a12 * a12;
+    const b = Math.abs(det) > 1e-12 ? (r1 * a22 - r2 * a12) / det : r1 / Math.max(a11, 1e-9);
+    const c = Math.abs(det) > 1e-12 ? (a11 * r2 - a12 * r1) / det : 0;
+    const res = pts.map((q) => {
+      const sf = b * q.tau + c * q.tau * q.tau;
+      const P = project(cal.P, [prior[0] + sf * d[0], prior[1] + sf * d[1], 0.12]);
+      return P[2] > 0 ? Math.hypot(P[0] - q.p.x, P[1] - q.p.y) : 1e4;
+    });
+    const cap = 15 * kpx;
+    return { deg, b, c, res, cost: res.reduce((x, v) => x + Math.min(v, cap) ** 2, 0) / res.length };
+  };
+  let best = null;
+  for (let a = -80; a <= 80; a += 1) { const e = evalAt(a); if (!best || e.cost < best.cost) best = e; }
+  for (let a = best.deg - 1; a <= best.deg + 1; a += 0.1) { const e = evalAt(a); if (e.cost < best.cost) best = e; }
+  const rms = Math.sqrt(best.res.reduce((x, v) => x + v * v, 0) / best.res.length) / kpx;
+  const med = [...best.res].sort((p, q) => p - q)[best.res.length >> 1] / kpx;
+  return { angle: best.deg, speed: best.b, decel: best.c, rms, med, n: pts.length };
 }
 
 // Where the ball went: spray direction, type and landing distance (feet), with a confidence.
+// Two explanations of the track compete: a flight through the air (gravity and drag) and a
+// ball rolling or skipping along the ground.
 export function ballOutcome(cal, ball, field, guessType) {
   const bp = cal.basePath, fence = Number(field && field.fence) || bp * 3.3;
   if (!ball || !ball.found || !ball.track || ball.track.length < 4) return null;
   const fit = fitFlight(cal, ball.track, ball.tContact);
-  if (!fit) return null;
-  const V = fit.V, sp = norm(V), hs = Math.hypot(V[0], V[1]);
-  const launch = Math.atan2(V[2], hs) * 180 / Math.PI;
-  let angle = Math.atan2(V[0], V[1]) * 180 / Math.PI;
-  const L = landing(fit.X0, V);
-  const mph = sp * 0.6818;
-  const good = fit.n >= 6 && fit.rms < 6 && mph > 8 && mph < 110 && V[1] > -5;
-  let type = launch < 10 ? 'GB' : launch < 25 ? 'LD' : launch < 52 ? 'FB' : 'PU';
-  if (!good && guessType) type = guessType;
-  if (type === 'GB') { const gd = groundDir(cal, fit.pts, fit.X0); if (gd != null) angle = good ? 0.5 * angle + 0.5 * gd : gd; }
-  let dist;
-  if (type === 'GB') dist = bp * 1.05;
-  else if (good) dist = Math.hypot(L.x, L.y);
-  else dist = { LD: 2.1, FB: 2.5, PU: 0.8 }[type] * bp;
-  if (type === 'PU') dist = Math.min(dist, bp * 1.6);
+  const gr = groundFit(cal, ball.track, fit ? fit.t0 : ball.tContact);
+  if (!fit && !gr) return null;
+  let air = null;
+  if (fit) {
+    const V = fit.V, sp = norm(V), hs = Math.hypot(V[0], V[1]);
+    const L = landing(fit.X0, V);
+    air = { V, launch: Math.atan2(V[2], hs) * 180 / Math.PI, angle: Math.atan2(V[0], V[1]) * 180 / Math.PI, mph: sp * 0.6818, L, dist: Math.hypot(L.x, L.y), apex: L.apex,
+      good: fit.n >= 6 && fit.rms < 6 && sp * 0.6818 > 8 && sp * 0.6818 < 110 && V[1] > -5 };
+  }
+  const groundOk = gr && gr.n >= 4 && gr.speed > 8 && gr.rms < 9;
+  // on the ground when the ground line explains the track about as well, or the flight is low
+  let onGround = false;
+  if (groundOk && (!air || !air.good)) onGround = true;
+  else if (groundOk && air && air.good && (gr.rms <= fit.rms * 1.25 || air.launch < 8 || air.apex < 3.5)) onGround = true;
+  let type, angle, dist, conf, how;
+  if (onGround) {
+    type = 'GB'; angle = gr.angle; dist = bp * 1.05; how = 'ground';
+    conf = gr.n >= 8 && gr.rms < 4 ? 'high' : gr.rms < 7 ? 'medium' : 'low';
+  } else if (air) {
+    type = air.launch < 10 ? 'GB' : air.launch < 25 ? 'LD' : air.launch < 52 ? 'FB' : 'PU';
+    if (!air.good && guessType) type = guessType;
+    // a soft, low ball that comes down well short of the infielders is played on the bounce
+    if (air.good && (type === 'LD' || type === 'FB') && air.dist < bp * 0.7 && air.apex < 10) type = 'GB';
+    angle = air.angle; how = 'air';
+    if (type === 'GB') dist = bp * 1.05;
+    else if (air.good) dist = Math.max(air.dist, bp * 0.6);
+    else dist = { LD: 2.1, FB: 2.5, PU: 0.8 }[type] * bp;
+    if (type === 'PU') dist = Math.min(dist, bp * 1.6);
+    conf = air.good && fit.n >= 9 && fit.span > 0.25 ? 'high' : air.good ? 'medium' : 'low';
+  } else return null;
   dist = Math.max(bp * 0.35, Math.min(dist, fence * 1.08));
-  const foul = Math.abs(angle) > 46 || V[1] < 0;
-  const conf = good && fit.n >= 9 && fit.span > 0.25 ? 'high' : good ? 'medium' : 'low';
+  const foul = Math.abs(angle) > 47 || (!onGround && air && air.V[1] < 0);
   const r = angle * Math.PI / 180;
   return {
     x: Math.round(Math.sin(r) * dist * 10) / 10, y: Math.round(Math.cos(r) * dist * 10) / 10,
-    angle: Math.round(angle * 10) / 10, dist: Math.round(dist), type, launch: Math.round(launch), mph: Math.round(mph),
-    hang: Math.round(L.T * 100) / 100, conf, foul, n: fit.n, rms: Math.round(fit.rms * 10) / 10, tContact: fit.t0,
-    fit: { X0: fit.X0, V: fit.V, t0: fit.t0 },
+    angle: Math.round(angle * 10) / 10, dist: Math.round(dist), type, how, conf, foul,
+    launch: air ? Math.round(air.launch) : null, mph: onGround ? Math.round(gr.speed * 0.6818) : air ? Math.round(air.mph) : null,
+    hang: air ? Math.round(air.L.T * 100) / 100 : null,
+    n: onGround ? gr.n : fit.n, rms: Math.round((onGround ? gr.rms : fit.rms) * 10) / 10,
+    tContact: fit ? fit.t0 : ball.tContact,
+    fit: fit && !onGround ? { X0: fit.X0, V: fit.V, t0: fit.t0 } : null,
+    ground: gr ? { angle: Math.round(gr.angle * 10) / 10, rms: Math.round(gr.rms * 10) / 10, speed: Math.round(gr.speed) } : null,
+    airFit: air ? { angle: Math.round(air.angle * 10) / 10, launch: Math.round(air.launch), rms: Math.round(fit.rms * 10) / 10, dist: Math.round(air.dist) } : null,
   };
 }

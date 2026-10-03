@@ -243,7 +243,9 @@ export function findSwing(coarse, hint) {
   const sw = coarse.map((f) => dist(X(f.kp, 5), Y(f.kp, 5), X(f.kp, 6), Y(f.kp, 6)) / H);
   const hw = coarse.map((f) => dist(X(f.kp, 11), Y(f.kp, 11), X(f.kp, 12), Y(f.kp, 12)) / H);
   const sw0 = median(sw.slice(0, n0)), hw0 = median(hw.slice(0, n0));
-  const hip0 = hipCenter(coarse[0].kp);
+  // where the batter stands: the middle of the stance frames, not just the first one
+  const hs0 = coarse.slice(0, n0).map((f) => hipCenter(f.kp));
+  const hip0 = [median(hs0.map((h) => h[0])), median(hs0.map((h) => h[1]))];
   const turn = coarse.map((_, i) => Math.abs(sw[i] - sw0) + Math.abs(hw[i] - hw0));
   const inBox = coarse.map((f) => { const h = hipCenter(f.kp); return dist(h[0], h[1], hip0[0], hip0[1]) < 0.45 * H; });
   const crossings = [];
@@ -252,14 +254,19 @@ export function findSwing(coarse, hint) {
   }
   if (crossings.length) {
     let pick = crossings[0];
-    if (hint != null) pick = crossings.reduce((a, b) => (Math.abs(b.t - hint) < Math.abs(a.t - hint) ? b : a));
-    return { t: pick.t, v: pick.v, H, how: 'turn' };
+    let ok = true;
+    if (hint != null && typeof hint === 'object') {
+      // a window: the first turn inside it (later turns are the batter turning to run)
+      const inWin = crossings.filter((c) => c.t >= hint.lo && c.t <= hint.hi);
+      if (inWin.length) pick = inWin[0]; else ok = false;      // none in the window: try the motion burst below
+    } else if (hint != null) pick = crossings.reduce((a, b) => (Math.abs(b.t - hint) < Math.abs(a.t - hint) ? b : a));
+    if (ok) return { t: pick.t, v: pick.v, H, how: 'turn' };
   }
   // fallback: biggest burst of upper-body motion relative to the hips, before leaving the box
   const UP = [5, 6, 7, 8, 9, 10];
   const score = [];
   for (let i = 1; i < coarse.length; i++) {
-    if (!inBox[i]) break;
+    if (!inBox[i]) { if (hint != null && typeof hint === 'object') continue; break; }
     const a = coarse[i - 1].kp, b = coarse[i].kp, dt = coarse[i].t - coarse[i - 1].t;
     const ha = hipCenter(a), hb = hipCenter(b);
     let s = 0, n = 0;
@@ -272,7 +279,7 @@ export function findSwing(coarse, hint) {
     score.push({ t: coarse[i].t, v: n ? s / n / H / dt : 0 });
   }
   if (!score.length) return null;
-  let cands = hint != null ? score.filter((s) => Math.abs(s.t - hint) < 0.8) : score;
+  let cands = hint == null ? score : typeof hint === 'object' ? score.filter((s) => s.t >= hint.lo && s.t <= hint.hi) : score.filter((s) => Math.abs(s.t - hint) < 0.8);
   if (!cands.length) cands = score;
   const best = cands.reduce((a, b) => (b.v > a.v ? b : a));
   if (best.v < 0.9) return null;        // body barely moved: probably a take
@@ -440,7 +447,7 @@ export function findBall(G0, R, frames, m, H) {
     blobs.push({ t: G[k].t, b: movingBlobs(G[k - 1].g, G[k].g, G[k + 1].g, R.w, R.h, box) });
   }
   const HP = GS;                                   // body height in grey pixels
-  let best = null;
+  const cands = [];
   for (let i = 0; i < blobs.length - 4; i++) {
     if (blobs[i].t < e.tRot || blobs[i].t > e.tRot + 0.5) continue;
     for (const b0 of blobs[i].b) {
@@ -449,7 +456,7 @@ export function findBall(G0, R, frames, m, H) {
       for (const b1 of blobs[i + 1].b) {
         const dt1 = (blobs[i + 1].t - blobs[i].t) / (1 / 30);
         const step = Math.hypot(b1.x - b0.x, b1.y - b0.y) / dt1;
-        if (step < 0.1 * HP || step > 1.0 * HP) continue;
+        if (step < 0.05 * HP || step > 1.0 * HP) continue;
         if (Math.hypot(b1.x - zone[0], b1.y - zone[1]) <= d0) continue;   // must move away from the batter
         const tr = [{ t: blobs[i].t, x: b0.x, y: b0.y }, { t: blobs[i + 1].t, x: b1.x, y: b1.y }];
         let vx = (b1.x - b0.x) / (blobs[i + 1].t - blobs[i].t), vy = (b1.y - b0.y) / (blobs[i + 1].t - blobs[i].t);
@@ -470,14 +477,28 @@ export function findBall(G0, R, frames, m, H) {
         const last = tr[tr.length - 1];
         const net = Math.hypot(last.x - zone[0], last.y - zone[1]) - d0;
         const steps = []; for (let q = 0; q + 1 < tr.length; q++) steps.push(Math.hypot(tr[q + 1].x - tr[q].x, tr[q + 1].y - tr[q].y) / ((tr[q + 1].t - tr[q].t) * 30));
-        if (net < 1.0 * HP || median(steps) < 0.06 * HP) continue;
+        // a ball hit away from the camera crosses little of the picture: allow a shorter
+        // net move when the track is long and steady
+        const minNet = tr.length >= 8 ? 0.45 * HP : 1.0 * HP;
+        if (net < minNet || median(steps) < 0.04 * HP) continue;
         const score = tr.length * net / HP;
-        if (!best || score > best.score) best = { score, tr };
+        cands.push({ score, tr });
       }
     }
   }
-  if (!best) return { found: false };
-  best = best.tr;
+  if (!cands.length) return { found: false };
+  // the best track, plus a few others that start elsewhere (the bat or a hand can look like the ball)
+  cands.sort((p, q) => q.score - p.score);
+  const picked = [];
+  for (const c of cands) {
+    if (picked.length >= 4) break;
+    if (picked.some((p) => p.tr.some((a) => c.tr.some((b) => a.t === b.t && Math.hypot(a.x - b.x, a.y - b.y) < 2)))) continue;
+    picked.push(c);
+  }
+  const out = picked.map((c) => describeTrack(c.tr, R, s, zone, kpAt, H));
+  return { ...out[0], alts: out.slice(1) };
+}
+function describeTrack(best, R, s, zone, kpAt, H) {
   const toV = (p) => ({ t: p.t, x: R.x0 + p.x / s, y: R.y0 + p.y / s });
   const track = best.map(toV);
   // contact: extrapolate the first two points back to the contact zone

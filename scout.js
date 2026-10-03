@@ -5,7 +5,7 @@
 // Pass 2 goes back to each candidate, finds the batter in the box, runs the swing analysis,
 // follows the ball off the bat and fits its flight with the field calibration.
 
-import { waitFrame, analyzeSwing, acquireAt, extent, packFrames } from './swing.js';
+import { waitFrame, analyzeSwing, acquireAt, extent, hipCenter, packFrames } from './swing.js';
 import * as F from './field.js';
 
 const abortErr = () => new DOMException('Stopped', 'AbortError');
@@ -354,11 +354,115 @@ function brightBlobs(a, b, c, w, h, px, py, gate, s) {
   return best;
 }
 
+// A wider, sharper search for the ball off the bat: the infield in front of home at close to
+// full resolution, any small spot brighter than the same place a frame before and after.
+// Finds the soft and slow balls that the batter-sized search misses. Returns candidate tracks.
+export async function findBallWide(video, cal, res, { signal } = {}) {
+  const ev = res.events, tR = ev.tRot != null ? ev.tRot : res.swingT;
+  const bp = cal.basePath, ct = cal.content;
+  const pts = [];
+  for (const [x, y] of [[-bp * 0.9, -5], [bp * 0.9, -5], [-bp * 0.9, bp * 1.3], [bp * 0.9, bp * 1.3], [0, bp * 1.5]]) for (const z of [0, 16]) { const p = F.project(cal.P, [x, y, z]); if (p[2] > 0) pts.push(p); }
+  if (pts.length < 4) return [];
+  let x0 = Math.max(ct.x, Math.min(...pts.map((p) => p[0]))), x1 = Math.min(ct.x + ct.w, Math.max(...pts.map((p) => p[0])));
+  let y0 = Math.max(ct.y, Math.min(...pts.map((p) => p[1]))), y1 = Math.min(ct.y + ct.h, Math.max(...pts.map((p) => p[1])));
+  if (x1 - x0 < 20 || y1 - y0 < 20) return [];
+  // scale so the ball near home is about 3.5 px across
+  const near = F.project(cal.P, [0, 3, 3]);
+  const ballPx = near[2] > 0 ? cal.cam.f * 0.24 / near[2] : 6;
+  let sc = Math.max(0.25, Math.min(1, 3.5 / ballPx));
+  if ((x1 - x0) * (y1 - y0) * sc * sc > 600000) sc = Math.sqrt(600000 / ((x1 - x0) * (y1 - y0)));
+  const W = Math.round((x1 - x0) * sc), Hh = Math.round((y1 - y0) * sc);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  const grabs = []; let lastMedia = null;
+  for (let t = tR - 0.12; t <= Math.min(video.duration - 0.03, tR + 1.15); t += 1 / 30) {
+    if (signal && signal.aborted) throw abortErr();
+    const mt = await waitFrame(video, t);
+    if (mt != null && lastMedia != null && Math.abs(mt - lastMedia) < 1e-4) continue;
+    lastMedia = mt;
+    cx.drawImage(video, x0, y0, x1 - x0, y1 - y0, 0, 0, W, Hh);
+    const d = cx.getImageData(0, 0, W, Hh).data, g = new Int16Array(W * Hh);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+    grabs.push({ t: mt != null ? mt : t, g });
+  }
+  if (grabs.length < 6) return [];
+  const H = (res.H || 150) * sc;                       // the batter's height in this picture
+  const maxArea = Math.max(6, (ballPx * sc * 2) ** 2);
+  const kpNear = (t) => res.frames.reduce((b, f) => (Math.abs(f.t - t) < Math.abs(b.t - t) ? f : b), res.frames[0]).kp;
+  const blobs = [];
+  for (let k = 1; k + 1 < grabs.length; k++) {
+    const a = grabs[k - 1].g, b = grabs[k].g, c = grabs[k + 1].g, t = grabs[k].t;
+    const e = extent(kpNear(t), 0.2);
+    const box = e ? [(e.cx - e.w / 2 - x0) * sc - 3, (e.cy - e.h / 2 - y0) * sc - 3, (e.cx + e.w / 2 - x0) * sc + 3, (e.cy + e.h / 2 - y0) * sc + 3] : null;
+    const seen = new Uint8Array(W * Hh), list = [];
+    const m = (p) => Math.min(b[p] - a[p], b[p] - c[p]);
+    for (let i = 0; i < W * Hh; i++) {
+      if (seen[i] || m(i) <= 14) continue;
+      let area = 0, sx = 0, sy = 0, sw = 0; const st = [i]; seen[i] = 1;
+      while (st.length) {
+        const p = st.pop(), qx = p % W, qy = (p / W) | 0, v = m(p);
+        area++; sx += qx * v; sy += qy * v; sw += v;
+        if (area > maxArea * 4) { st.length = 0; break; }
+        for (const q of [p - 1, p + 1, p - W, p + W]) { if (q < 0 || q >= W * Hh || seen[q]) continue; if (m(q) > 9) { seen[q] = 1; st.push(q); } }
+      }
+      if (area > maxArea) continue;
+      const bx = sx / sw, by = sy / sw;
+      if (box && bx > box[0] && bx < box[2] && by > box[1] && by < box[3]) continue;
+      list.push({ x: bx, y: by });
+    }
+    blobs.push({ t, b: list });
+  }
+  // where contact happens: in front of the batter at hand height
+  const kc = kpNear(tR); const hands = [9, 10].filter((k) => kc[k * 3 + 2] > 0.15);
+  const hip = hipCenter(kc);
+  const zx = ((hands.length ? hands.reduce((s2, k) => s2 + kc[k * 3], 0) / hands.length : hip[0]) - x0) * sc;
+  const zy = ((hands.length ? hands.reduce((s2, k) => s2 + kc[k * 3 + 1], 0) / hands.length : hip[1] - 0.25 * res.H) - y0) * sc;
+  const tracks = [];
+  for (let i = 0; i + 5 < blobs.length; i++) {
+    if (blobs[i].t < tR - 0.06 || blobs[i].t > tR + 0.45) continue;
+    for (const b0 of blobs[i].b) {
+      const d0 = Math.hypot(b0.x - zx, b0.y - zy);
+      if (d0 > 2.6 * H) continue;
+      for (const b1 of blobs[i + 1].b) {
+        const dt1 = blobs[i + 1].t - blobs[i].t, step = Math.hypot(b1.x - b0.x, b1.y - b0.y) / (dt1 * 30);
+        if (step < 0.025 * H || step > 0.9 * H) continue;
+        if (Math.hypot(b1.x - zx, b1.y - zy) <= d0) continue;            // moving away from the batter
+        const tr = [{ t: blobs[i].t, x: b0.x, y: b0.y }, { t: blobs[i + 1].t, x: b1.x, y: b1.y }];
+        let vx = (b1.x - b0.x) / dt1, vy = (b1.y - b0.y) / dt1, miss = 0;
+        for (let j = i + 2; j < blobs.length && miss < 3; j++) {
+          const last = tr[tr.length - 1], dt = blobs[j].t - last.t;
+          const px = last.x + vx * dt, py = last.y + vy * dt;
+          const gate = 0.06 * H + 0.4 * Math.hypot(vx * dt, vy * dt) + 2;
+          let pick = null, pd = gate;
+          for (const c of blobs[j].b) { const dd = Math.hypot(c.x - px, c.y - py); if (dd < pd) { pd = dd; pick = c; } }
+          if (!pick) { miss++; continue; }
+          miss = 0;
+          vx = 0.5 * vx + 0.5 * (pick.x - last.x) / dt; vy = 0.5 * vy + 0.5 * (pick.y - last.y) / dt;
+          tr.push({ t: blobs[j].t, x: pick.x, y: pick.y });
+        }
+        if (tr.length < 6) continue;
+        const net = Math.hypot(tr[tr.length - 1].x - tr[0].x, tr[tr.length - 1].y - tr[0].y);
+        if (net < 0.3 * H) continue;
+        tracks.push({ score: tr.length * net / H, tr });
+      }
+    }
+  }
+  tracks.sort((p, q) => q.score - p.score);
+  const out = [];
+  for (const c of tracks) {
+    if (out.length >= 5) break;
+    if (out.some((o) => o.raw.some((a) => c.tr.some((b) => a.t === b.t && Math.hypot(a.x - b.x, a.y - b.y) < 1.5)))) continue;
+    out.push({ raw: c.tr, found: true, wide: true, type: null, tContact: c.tr[0].t - 1 / 60, track: c.tr.map((p) => ({ t: p.t, x: x0 + p.x / sc, y: y0 + p.y / sc })) });
+  }
+  return out.map(({ raw, ...o }) => o);
+}
+
 // one candidate play, start to finish
 export async function analyzePlay({ video, pose, cal, cand, field, signal, onProgress = () => {} }) {
-  const tRun = cand.t;
+  const tRun = cand.t;          // when the motion reached the first stretch of the base line
   let bat = null;
-  for (const back of [2.4, 1.8, 3.1]) {
+  // start well before the run: some batters watch the ball for a second or two before running
+  for (const back of [4.6, 4.0, 5.2, 3.4]) {
     if (signal && signal.aborted) throw abortErr();
     const ts = Math.max(0, tRun - back);
     onProgress({ stage: 'Finding the batter', p: 0 });
@@ -366,15 +470,68 @@ export async function analyzePlay({ video, pose, cal, cand, field, signal, onPro
     if (bat) { bat.t = ts; break; }
   }
   if (!bat) return { error: 'no_batter' };
-  const res = await analyzeSwing({ video, pose, seed: { x: bat.x, y: bat.y, t: bat.t }, signal, hint: tRun - 0.5, tEnd: tRun + 0.9, onProgress });
+  const tEnd = tRun + 0.8;
+  let res = null;
+  // if the batter is lost (stepping out, the catcher in the way), start again a little later
+  for (const t0 of [bat.t, tRun - 3.6, tRun - 2.8]) {
+    if (t0 < bat.t - 0.01) continue;
+    let seed = { x: bat.x, y: bat.y, t: t0 };
+    if (t0 !== bat.t) { const b2 = await findBatter(video, pose, cal, t0); if (!b2) continue; seed = { x: b2.x, y: b2.y, t: t0 }; }
+    res = await analyzeSwing({ video, pose, seed, signal, hint: { lo: tRun - 3.4, hi: tRun - 0.1 }, tEnd, onProgress });
+    if (!res.error || res.error === 'no_swing') break;
+  }
   if (res.error) return { error: res.error, bats: bat.side };
-  const tc = res.events.tContact;
-  const near = tc > tRun - 2.3 && tc < tRun + 0.4;
-  let ball = res.ball;
-  if (ball && ball.found) { onProgress({ stage: 'Following the ball', p: 0.9 }); ball = await extendTrack(video, cal, ball, { signal }); }
-  const outcome = F.ballOutcome(cal, ball, field, ball && ball.found ? ball.type : null);
+  // a ball in play sends the batter out of the box; if they stayed, someone else ran (a throw, the catcher)
+  const run = batterRan(res, tEnd, cal);
+  if (run && !run.ran) return { error: 'no_run', bats: bat.side, run };
+  // the ball: of the tracks found off the bat, the one that makes a fair ball in play
+  let ball = null, outcome = null;
+  const tracks = res.ball && res.ball.found ? [res.ball, ...(res.ball.alts || [])] : [];
+  const rank = (o) => (!o ? 0 : o.foul ? 1 : o.conf === 'low' ? 2 : o.conf === 'medium' ? 3 : 4);
+  const better = (o, cur) => rank(o) > rank(cur) || (rank(o) === rank(cur) && rank(o) >= 3 && (o.n > cur.n + 3 || (o.n >= cur.n - 3 && o.rms < cur.rms)));
+  const consider = (list) => { for (const tb of list) { const o = F.ballOutcome(cal, tb, field, tb.type); if (o && better(o, outcome)) { ball = tb; outcome = o; } } };
+  consider(tracks);
+  if (rank(outcome) < 4) {
+    onProgress({ stage: 'Looking wider for the ball', p: 0.85 });
+    consider(await findBallWide(video, cal, res, { signal }));
+  }
+  if (ball) {
+    onProgress({ stage: 'Following the ball', p: 0.9 });
+    const ext = await extendTrack(video, cal, ball, { signal });
+    if (ext !== ball) { const o2 = F.ballOutcome(cal, ext, field, ext.type); if (rank(o2) >= rank(outcome)) { ball = ext; outcome = o2; } }
+  } else ball = res.ball;
+  const tc = outcome && outcome.tContact ? outcome.tContact : res.events.tContact;
   const thumb = await thumbAt(video, res);
-  return { bats: bat.side, batter: bat, analysis: res, ball, outcome, tContact: tc, nearRun: near, thumb };
+  return { bats: bat.side, batter: bat, analysis: res, ball, outcome, tContact: tc, run, thumb };
+}
+
+// did the batter leave the box after the swing? Hips move well away from the stance
+// (the tracker follows them out of the box), or the feet head toward first base.
+export function batterRan(res, tEnd, cal) {
+  const c = res.coarse || [], tc = res.events.tContact, H = res.H || 100;
+  const pre = c.filter((f) => f.t < tc - 0.35);
+  if (pre.length < 2) return null;
+  const hips = pre.map((f) => hipCenter(f.kp)).filter((h) => Number.isFinite(h[0]));
+  if (!hips.length) return null;
+  const mid = (a) => [...a].sort((p, q) => p - q)[a.length >> 1];
+  const mx0 = mid(hips.map((h) => h[0])), my0 = mid(hips.map((h) => h[1]));
+  let mx = 0;
+  for (const f of c) if (f.t > tc) { const h = hipCenter(f.kp); if (Number.isFinite(h[0])) mx = Math.max(mx, Math.hypot(h[0] - mx0, h[1] - my0) / H); }
+  // toward first: the feet's field x grows (both boxes run to the first-base side)
+  let toFirst = null;
+  if (cal) {
+    const feet = (kp) => { const a = [15, 16].filter((k) => kp[k * 3 + 2] > 0.15); return a.length ? F.toField(cal, a.reduce((s2, k) => s2 + kp[k * 3], 0) / a.length, Math.max(...a.map((k) => kp[k * 3 + 1]))) : null; };
+    const f0 = pre.map((f) => feet(f.kp)).filter(Boolean), after = c.filter((f) => f.t > tc + 0.2).map((f) => feet(f.kp)).filter(Boolean);
+    if (f0.length && after.length) {
+      const x0 = mid(f0.map((g) => g[0])), y0 = mid(f0.map((g) => g[1]));
+      const far = after.reduce((b, g) => (g[0] - x0 > b[0] - x0 ? g : b), after[0]);
+      toFirst = Math.round((far[0] - x0) * 10) / 10;
+      if (Math.hypot(far[0] - x0, far[1] - y0) > 25) toFirst = null;          // tracking slipped
+    }
+  }
+  const lastT = c.length ? c[c.length - 1].t : tc;
+  const ran = mx > 1.2 || (mx > 0.75 && (toFirst == null || toFirst > 1.0)) || (toFirst != null && toFirst > 2.5);
+  return { moved: Math.round(mx * 100) / 100, toFirst, lastT: Math.round(lastT * 100) / 100, ran };
 }
 
 // a square picture of the batter at contact (jpeg data URL) and where it came from

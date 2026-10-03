@@ -1003,7 +1003,7 @@ async function captureThumb() {
 const SCORE_PROMPT = `This image is the top-left part of one frame of a youth baseball video recorded with the GameChanger app. Read the scoreboard overlay if there is one.
 Reply with only a JSON object in exactly this shape:
 {"found": true, "batter": {"name": "M Eubanks", "number": "1", "line": "1 for 2"}, "pitcher": {"name": "T M", "number": "5", "pitches": 63}, "count": "1-0", "outs": 0, "inning": 6, "half": "bottom", "teams": [{"abbr": "VPRM", "runs": 9, "batting": false}, {"abbr": "GRGS", "runs": 5, "batting": true}]}
-(Those values are only an example of the format.) The batter's row shows a name, #number and a line like "1 for 2"; the pitcher's row shows "P:" and a pitch count. A small dot beside a team abbreviation marks the team at bat. A down-pointing triangle by the inning number means the bottom half, up-pointing means the top. Use null for anything you cannot read, and {"found": false} if there is no scoreboard.`;
+(Those values are only an example of the format.) Below the two team rows there are one or two player rows, in either order. The batter's row shows a name, #number and a line like "1 for 2" or "0 for 0"; the pitcher's row shows a name, #number and "P:" with a pitch count. Never report the pitcher as the batter: if the only player row shows "P:", use null for the batter. A small dot beside a team abbreviation marks the team at bat. A down-pointing triangle by the inning number means the bottom half, up-pointing means the top. Use null for anything you cannot read, and {"found": false} if there is no scoreboard.`;
 async function readScoreboard() {
   setBStatus('', false);
   if (!S.sample) { setBStatus(S.standalone ? 'Type the batter in from the scoreboard. Names you have saved before autocomplete.' : 'Type the batter in. (Reading the scoreboard needs Claude, which this view does not have.)'); return; }
@@ -1884,8 +1884,11 @@ function boardFor(play, corner) {
   const L = OV.layout(corner);
   play.board = L && L.ok ? { batting: L.batting } : null;
   if (L && L.ok) {
-    play.print = OV.rowPrint(corner, L.batter);
-    play.preview = OV.rowPreview(corner, L.batter);
+    // batter line known: key on it. Not known (two lines, no at-bat dot): key on both until read
+    const rowsKey = L.batter ? [L.batter] : L.players;
+    const pr = rowsKey.map((r) => OV.rowPrint(corner, r));
+    play.print = pr.length === 1 ? pr[0] : Float32Array.from([...pr[0], ...pr[1]].map((v) => v / Math.SQRT2));
+    if (L.batter) play.preview = OV.rowPreview(corner, L.batter);
   }
   let cl = play.print ? G.clusters.find((c) => OV.samePrint(c.print, play.print) > 0.93) : null;
   if (!cl) {
@@ -1908,15 +1911,25 @@ async function readCluster(cl, corner, L) {
       if (d.inning) cl.inning = (d.half === 'top' ? 'Top ' : d.half === 'bottom' ? 'Bot ' : '') + d.inning;
     }
   } else if (S.standalone && L && L.ok) {
-    const txt = await OV.ocrLine(OV.rowCanvas(corner, L.batter, { part: 0.66 }));
-    const b = OV.parseBatter(txt);
+    // read the line taken for the batter; if it turns out to be the pitcher's ("P: 11"), use the other
+    const order = L.batter ? [L.batter, ...L.players.filter((r) => r !== L.batter)] : [...L.players].reverse();
+    let chosen = null, b = null;
+    for (const row of order) {
+      const txt = await OV.ocrLine(OV.rowCanvas(corner, row, { part: 1 }));
+      if (OV.isPitcherLine(txt)) continue;
+      const pb = OV.parseBatter(txt);
+      if (pb && (OV.isBatterLine(txt) || order.length === 1 || row === L.batter)) { chosen = row; b = pb; break; }
+      if (pb && !chosen) { chosen = row; b = pb; }
+    }
     if (b) { cl.name = b.name; cl.number = b.number; cl.src = 'OCR'; }
+    if (chosen && !L.batter) cl.preview = OV.rowPreview(corner, chosen);
   }
   for (const p of cl.plays) applyCluster(p);
   renderResults();
 }
 function applyCluster(p) {
   const cl = p.cluster; if (!cl) return;
+  if (!p.preview && cl.preview) p.preview = cl.preview;
   if (p.nameSrc !== 'typed') { if (cl.name) { p.name = cl.name; p.number = cl.number; p.nameSrc = cl.src; } }
   if (!p.team) p.team = cl.team || '';
   if (!p.count && cl.count) p.count = cl.count;
@@ -1998,7 +2011,7 @@ async function scoutRun() {
         });
         G.live = null; scDraw();
         G.stats.perPlay.push((performance.now() - t1) / 1000);
-        if (r.error) { if (r.error === 'no_swing') G.stats.noswing++; else G.stats.nobatter++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
+        if (r.error) { if (r.error === 'no_swing' || r.error === 'no_run') G.stats.noswing++; else G.stats.nobatter++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
         if (r.outcome && r.outcome.foul) { G.stats.foul++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
         Object.assign(play, r);
         play.bats = r.bats;
@@ -2056,7 +2069,7 @@ function renderRun() {
     const skipped = st.other + st.noswing + st.nobatter + st.foul;
     const lead = G.needCal != null ? `Paused until the bases are marked for part ${G.needCal + 1}.` : ph === 'running' ? 'Working on it. Balls in play show up below as they are found.' : ph === 'done' ? `Done in ${Math.max(1, Math.round((G.runSecs || 0) / 60))} min.` : 'Stopped. What was found so far is below.';
     html = `${lead}<div class="stat3"><div><b class="num">${st.found}</b>balls in play</div><div><b class="num">${st.checked}</b>plays checked</div><div><b class="num">${skipped}</b>skipped</div></div>`
-      + (skipped ? `<p class="small muted" style="margin:8px 0 0">Skipped: ${[st.other && `${st.other} by the other team`, st.noswing && `${st.noswing} with no swing (walks, hit by pitch)`, st.foul && `${st.foul} foul`, st.nobatter && `${st.nobatter} where the batter could not be followed`].filter(Boolean).join(', ')}.</p>` : '')
+      + (skipped ? `<p class="small muted" style="margin:8px 0 0">Skipped: ${[st.other && `${st.other} by the other team`, st.noswing && `${st.noswing} that were not a ball in play (pitches taken or missed, throws, walks)`, st.foul && `${st.foul} foul`, st.nobatter && `${st.nobatter} where the batter could not be followed`].filter(Boolean).join(', ')}.</p>` : '')
       + (!G.abort && (ph === 'done' || ph === 'stopped') ? `<div class="actions"><label class="btn" for="scFile">Scout another game</label></div>` : '');
   }
   $('scRunText').innerHTML = html;
