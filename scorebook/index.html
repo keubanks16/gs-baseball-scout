@@ -340,6 +340,13 @@ table.st tr:last-child td { border-bottom: 0; }
 .opp-row .slot { font-family: var(--font-display); color: var(--ink-3); text-align: center; }
 .opp-row .input { padding: 8px; min-height: 40px; }
 
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.scan-btn { position: relative; align-self: flex-start; }
+.scan { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 15px; }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: 0 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ros-row { display: grid; grid-template-columns: 64px 1fr 64px 34px; gap: 6px; align-items: center; }
+.ros-row .input { padding: 8px; min-height: 40px; }
 .toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--ground); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 15px; z-index: 50; max-width: calc(100% - 32px); box-shadow: var(--shadow); }
 .loading { padding: 60px 0; text-align: center; color: var(--ink-2); display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .loading img { height: 60px; width: auto; animation: pulse 1.4s infinite; }
@@ -822,7 +829,11 @@ table.st tr:last-child td { border-bottom: 0; }
     g.opponent = g.opponent || 'Opponent';
     return g;
   }
-  const Data = { team: defaultTeam(), games: {}, loaded: { team: false, games: false } };
+  const Data = { team: defaultTeam(), games: {}, opponents: {}, loaded: { team: false, games: false, opps: false } };
+  function oppKey(name) { const k = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); return 'o-' + (k || 'opponent'); }
+  function normRoster(o) { const n = Object.assign({ name: 'Opponent', players: [] }, o || {}); n.players = Array.isArray(n.players) ? n.players : []; return n; }
+  const rosterFor = (name) => Data.opponents[oppKey(name)] || null;
+  const rosterKey = (o) => (o && String(o.num || '').trim() ? '#' + String(o.num).trim() : o && String(o.name || '').trim() ? String(o.name).trim().toLowerCase() : '');
   const UI = { tab: 'games', gameId: null, gameTab: 'box', sprayWho: 'us', statsMode: 'bat', sort: { bat: 'PA', pit: 'OUTS' }, scoutOpp: null, scoutKey: '*', sprayMode: 'dots', liveId: null, readOnly: false, canWrite: null, ready: false, sheet: null, ai: {} };
   const Caps = { sample: null, downloads: null };
   try { const t = localStorage.getItem('gs-baseball-tab'); if (t) UI.tab = t; } catch (e) { /* per-viewer convenience only */ }
@@ -840,11 +851,13 @@ table.st tr:last-child td { border-bottom: 0; }
         Data.team = normTeam(d && d.team);
         Data.games = {};
         if (d && d.games) for (const id in d.games) Data.games[id] = normGame(d.games[id]);
-      } catch (e) { Data.team = defaultTeam(); Data.games = {}; }
-      Data.loaded.team = Data.loaded.games = true;
+        Data.opponents = {};
+        if (d && d.opponents) for (const k in d.opponents) Data.opponents[k] = normRoster(d.opponents[k]);
+      } catch (e) { Data.team = defaultTeam(); Data.games = {}; Data.opponents = {}; }
+      Data.loaded.team = Data.loaded.games = Data.loaded.opps = true;
     },
     persistLocal() {
-      try { localStorage.setItem(LS_KEY, JSON.stringify({ team: Data.team, games: Data.games })); return true; } catch (e) { return false; }
+      try { localStorage.setItem(LS_KEY, JSON.stringify({ team: Data.team, games: Data.games, opponents: Data.opponents })); return true; } catch (e) { return false; }
     },
     async write(path, data) {
       if (this.kind === 'db') return this.db.doc(path).set(data);
@@ -898,17 +911,18 @@ table.st tr:last-child td { border-bottom: 0; }
   };
   const saveTeam = () => Saver.put('team/main', Data.team);
   function saveGame(g) { g.updatedAt = Date.now(); Saver.put('games/' + g.id, g); }
-  async function removeGame(id) {
-    delete Data.games[id];
-    const path = 'games/' + id;
+  async function removePath(path, what) {
     const e = Saver.q.get(path);
     if (e) clearTimeout(e.t);
     Saver.q.delete(path);
-    Saver.deleting.add(id);
-    try { await Backend.remove(path); } catch (err) { toast('Could not delete that game.'); }
-    Saver.deleting.delete(id);
+    Saver.deleting.add(path);
+    try { await Backend.remove(path); } catch (err) { toast('Could not delete that ' + what + '.'); }
+    Saver.deleting.delete(path);
     syncPill();
   }
+  function removeGame(id) { delete Data.games[id]; return removePath('games/' + id, 'game'); }
+  function removeRoster(key) { delete Data.opponents[key]; return removePath('opponents/' + key, 'roster'); }
+  function saveRoster(doc) { doc.updatedAt = Date.now(); const k = oppKey(doc.name); Data.opponents[k] = doc; Saver.put('opponents/' + k, doc); }
 
   // ---------- derived ----------
   const RC = new Map();
@@ -1435,6 +1449,7 @@ table.st tr:last-child td { border-bottom: 0; }
       const okey = oname.toLowerCase();
       if (!opps.has(okey)) opps.set(okey, { key: okey, name: oname, hitters: new Map(), games: 0, last: g.date });
       const O = opps.get(okey);
+      const R = rosterFor(oname);
       O.games++;
       O.last = g.date;
       for (const pa of s.pas) {
@@ -1445,6 +1460,10 @@ table.st tr:last-child td { border-bottom: 0; }
         const H = O.hitters.get(hk);
         if (o.name) H.name = o.name;
         if (o.bats) H.bats = o.bats;
+        if (R && H.num && (!H.name || !H.bats)) {
+          const rp = R.players.find((x) => String(x.num || '').trim() === String(H.num).trim());
+          if (rp) { if (!H.name && rp.name) H.name = rp.name; if (!H.bats && rp.bats) H.bats = rp.bats; }
+        }
         H.pas.push(Object.assign({ date: g.date }, pa));
       }
     }
@@ -1507,6 +1526,12 @@ table.st tr:last-child td { border-bottom: 0; }
     h += `<h2 class="sec">Roster ${canEdit() ? '<button class="btn ghost sm" data-act="player">+ Add player</button>' : ''}</h2>`;
     if (!t.players.length) h += `<div class="card empty"><h3>Add your players</h3><p>Numbers, positions, and which side they hit from. Lineups and stats use this roster.</p>${canEdit() ? '<button class="btn primary" data-act="player">+ Add player</button>' : ''}</div>`;
     else h += `<div class="card roster">${sortedRoster().map((p) => `<button class="player" data-act="${canEdit() ? 'player' : 'playerCard'}" data-id="${esc(p.id)}"><span class="no">${esc(p.num || '–')}</span><span style="min-width:0"><span class="nm">${esc(p.name)}</span> ${p.sample ? '<span class="chip sample">Sample</span>' : ''}<span class="meta">${esc(p.pos || 'Position not set')} · B/T ${esc(p.bats || '?')}/${esc(p.throws || '?')}</span></span><span class="meta">${canEdit() ? 'Edit' : ''}</span></button>`).join('')}</div>`;
+    if (canEdit()) {
+      const rs = Object.entries(Data.opponents).sort((a, b) => a[1].name.localeCompare(b[1].name));
+      h += `<h2 class="sec">Opponent rosters <button class="btn ghost sm" data-act="roster">+ Add roster</button></h2>`;
+      if (!rs.length) h += `<div class="card empty" style="padding:20px"><p>${Caps.sample ? 'Take a photo or screenshot of another team\'s roster and Claude reads the names and numbers into it.' : 'Save each opponent\'s roster so lineups and scouting show names, not just numbers.'}</p><button class="btn primary" data-act="roster">+ Add roster</button></div>`;
+      else h += `<div class="card roster">${rs.map(([k, r]) => `<button class="player" data-act="roster" data-key="${esc(k)}"><span class="no" style="font-size:16px">${esc((r.name || '?').slice(0, 3).toUpperCase())}</span><span style="min-width:0"><span class="nm">${esc(r.name)}</span><span class="meta">${r.players.length} player${r.players.length === 1 ? '' : 's'}${r.updatedAt ? ' · updated ' + esc(new Date(r.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : ''}</span></span><span class="meta">Edit</span></button>`).join('')}</div>`;
+    }
     h += `<h2 class="sec">Your data</h2><section class="card stack" style="padding:14px">`;
     if (Backend.kind === 'db') h += `<p style="margin:0">Games and the roster are saved with this page in your Claude account, so they sync across your devices. Share the page and families can follow games live as you score.</p>`;
     else h += `<p style="margin:0">Games and the roster are saved in this browser on this device. Export a backup now and then so nothing is lost if the browser data is cleared.</p>`;
@@ -1571,7 +1596,7 @@ table.st tr:last-child td { border-bottom: 0; }
         ${sh.locked ? '<p class="small muted">The game has started. Use Sub on the Live screen to change the order.</p>' : bench.length ? `<div class="bench" style="margin-top:8px">${bench.map((p) => `<button data-act="luAdd" data-id="${esc(p.id)}">+ ${esc((p.num ? '#' + p.num + ' ' : '') + shortName(p.name))}</button>`).join('')}</div>` : ''}
         ${!Data.team.players.length ? '<p class="warn-text">Add players on the Team tab first.</p>' : ''}</div>
         <label><span class="field-lbl">Starting pitcher</span>${sel('ourPitcher', sh.ourPitcher, [['', 'Choose a pitcher']].concat(pitchers.map((p) => [p.id, (p.num ? '#' + p.num + ' ' : '') + p.name])), sh.locked ? 'disabled' : '')}</label>
-        <div><span class="field-lbl">${esc(sh.oppName)} batting order</span><div class="stack" style="gap:6px">${opp}</div>
+        <div><span class="field-lbl">${esc(sh.oppName)} batting order</span>${lineupRosterTools(sh)}<div class="stack" style="gap:6px">${opp}</div>
         ${sh.locked ? '' : '<button class="btn ghost sm" data-act="oppAdd">+ Add batter</button>'}
         <p class="small muted" style="margin:4px 0 0">Jersey numbers are enough. Scouting tracks each hitter by number across games.</p></div>
         <label><span class="field-lbl">${esc(sh.oppName)} starting pitcher</span>${inp('oppPitcher', sh.oppPitcher, `placeholder="#19 or a name" ${sh.locked ? 'disabled' : ''}`)}</label>
@@ -1643,6 +1668,17 @@ table.st tr:last-child td { border-bottom: 0; }
         ${sh.err ? `<div class="warn-text">${esc(sh.err)}</div>` : ''}
         <div class="row"><button class="btn primary" data-act="savePlayer">${sh.id ? 'Save' : 'Add player'}</button>${sh.id ? `<button class="btn" data-act="playerCard" data-id="${esc(sh.id)}">Stats</button><button class="btn danger" data-act="deletePlayer">Remove</button>` : ''}</div>`;
     },
+    roster(sh) {
+      const names = [...new Set(Object.values(Data.games).map((g) => g.opponent).concat(Object.values(Data.opponents).map((o) => o.name)))].sort();
+      const rows = sh.players.map((p, i) => `<div class="ros-row">${inp(`players.${i}.num`, p.num, 'placeholder="#" inputmode="numeric" aria-label="Number"')}${inp(`players.${i}.name`, p.name, 'placeholder="Name" aria-label="Name"')}${sel(`players.${i}.bats`, p.bats, BATS, 'aria-label="Bats"')}<button class="icon-btn" data-act="rosterRemove" data-i="${i}" aria-label="Remove player">×</button></div>`).join('');
+      return head(sh.key ? esc(sh.name) + ' roster' : 'Opponent roster') + `
+        ${sh.key ? '' : `<label><span class="field-lbl">Opponent</span>${inp('name', sh.name, 'list="ros-opps" autocomplete="off" placeholder="Team name"')}<datalist id="ros-opps">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist></label>`}
+        ${scanBlock(sh)}
+        <div><span class="field-lbl">Players (${sh.players.filter((p) => rosterKey(p)).length})</span><div class="stack" style="gap:6px">${rows || '<p class="muted small" style="margin:0">No players yet.</p>'}</div>
+        <button class="btn ghost sm" data-act="rosterAdd">+ Add player</button></div>
+        ${sh.err ? `<div class="warn-text">${esc(sh.err)}</div>` : ''}
+        <div class="row"><button class="btn primary" data-act="saveRosterSheet">Save roster</button>${sh.key ? '<button class="btn danger" data-act="deleteRoster">Delete roster</button>' : '<button class="btn" data-act="close">Cancel</button>'}</div>`;
+    },
     teamEdit(sh) {
       return head('Team settings') + `<label><span class="field-lbl">Team name</span>${inp('f.name', sh.f.name)}</label>
         <div class="grid2"><label><span class="field-lbl">Pitch limit</span>${inp('f.pitchLimit', sh.f.pitchLimit, 'type="number" min="0" inputmode="numeric"')}</label><label><span class="field-lbl">Innings per game</span>${inp('f.innings', sh.f.innings, 'type="number" min="1" max="12" inputmode="numeric"')}</label></div>
@@ -1677,6 +1713,122 @@ table.st tr:last-child td { border-bottom: 0; }
         ${log.length ? `<div><span class="field-lbl">Game log</span><div class="plays">${log.slice().reverse().map((x) => `<div class="play"><span class="tag">${esc(parseDate(x.g.date).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }))}</span><span>${x.g.home ? 'vs' : '@'} ${esc(x.g.opponent)} · ${x.b && x.b.PA ? x.b.H + '-' + x.b.AB : ''} ${esc(x.res.join(', '))}${x.p && x.p.PC ? ` · pitched ${E.fmtIP(x.p.OUTS)} IP, ${x.p.PC} P` : ''}</span><span></span></div>`).join('')}</div></div>` : ''}`;
     }
   };
+
+  const CAMERA = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.5h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
+  function scanBlock(sh, label) {
+    if (!Caps.sample || !canEdit()) return '';
+    const sc = sh.scan || {};
+    if (sc.busy) return `<div class="scan"><span class="spin" aria-hidden="true"></span><span class="grow">Reading the roster. This can take up to a minute.</span><button class="btn sm" data-act="scanStop">Stop</button></div>`;
+    return `<div class="stack" style="gap:6px"><label class="btn ${label === 'secondary' ? '' : 'primary'} scan-btn">${CAMERA}<span>Scan a roster photo</span><input class="vh" type="file" accept="image/*" multiple data-scan="1"></label>
+      ${sc.msg ? `<div class="small" style="color:var(--good);font-weight:600">${esc(sc.msg)}</div>` : ''}${sc.err ? `<div class="warn-text">${esc(sc.err)}</div>` : ''}
+      ${!sc.msg && !sc.err ? '<div class="small muted">Take a photo or pick screenshots. Several screenshots of one long roster work too.</div>' : ''}</div>`;
+  }
+  function lineupRosterTools(sh) {
+    const R = rosterFor(sh.oppName);
+    const used = new Set(sh.opp.map(rosterKey).filter(Boolean));
+    const avail = R ? R.players.filter((p) => rosterKey(p) && !used.has(rosterKey(p))) : [];
+    let h = '<div class="stack" style="gap:8px;margin-bottom:8px">';
+    if (R && R.players.length) {
+      h += `<div class="small muted">From the ${esc(R.name)} roster${sh.locked ? ' (fills blank spots)' : ''}:</div>`;
+      h += avail.length ? `<div class="bench">${avail.map((p) => `<button data-act="oppFromRoster" data-id="${esc(p.id)}">+ ${esc((p.num ? '#' + p.num + ' ' : '') + (p.name ? shortName(p.name) : ''))}</button>`).join('')}</div>` : '<div class="small muted">Everyone on the roster is in the order.</div>';
+      if (!sh.locked) h += `<div class="row"><button class="btn sm" data-act="wholeRoster">Bat the whole roster (${R.players.length})</button></div>`;
+    }
+    h += scanBlock(sh, R && R.players.length ? 'secondary' : 'primary');
+    return h + '</div>';
+  }
+  async function toJpeg(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej({ code: 'decode' }); i.src = url; });
+      const scale = Math.min(1, 2200 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej({ code: 'decode' })), 'image/jpeg', 0.88));
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function cleanRoster(raw) {
+    const arr = Array.isArray(raw) ? raw : raw && Array.isArray(raw.players) ? raw.players : [];
+    const out = [];
+    const seen = new Set();
+    for (const x of arr) {
+      if (!x || typeof x !== 'object') continue;
+      const num = String(x.num == null ? '' : x.num).replace(/[^0-9]/g, '').slice(0, 3);
+      const name = String(x.name == null ? '' : x.name).replace(/\s+/g, ' ').trim().slice(0, 40);
+      const bats = ['R', 'L', 'S'].includes(String(x.bats || '').toUpperCase()) ? String(x.bats).toUpperCase() : '';
+      const p = { num, name, bats };
+      const k = rosterKey(p);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(p);
+    }
+    return out;
+  }
+  function mergeRoster(existing, incoming) {
+    const list = existing.filter((p) => rosterKey(p)).map((p) => Object.assign({}, p));
+    for (const p of incoming) {
+      const k = rosterKey(p);
+      const hit = list.find((q) => rosterKey(q) === k) || (p.num && list.find((q) => !String(q.num || '').trim() && q.name && p.name && q.name.toLowerCase() === p.name.toLowerCase()));
+      if (hit) { if (!hit.num && p.num) hit.num = p.num; if (!hit.name && p.name) hit.name = p.name; if (!hit.bats && p.bats) hit.bats = p.bats; }
+      else list.push({ id: uid('r'), num: p.num, name: p.name, bats: p.bats });
+    }
+    return list;
+  }
+  const SCAN_PROMPT = 'These images show the roster of a baseball team: screenshots or photos of an app such as GameChanger, a lineup card, a scorebook page or a printed roster. If there are several images they are parts of the same roster and may overlap.\n\n'
+    + 'List every player you can read. Reply with only a JSON array of objects shaped {"num": string, "name": string, "bats": string}.\n'
+    + '- num: the jersey number, digits only, or "" if none is shown.\n'
+    + '- name: the player\'s name as written. Fix obvious data-entry slips, for example a number typed into the name ("Smith 11") with a first name sitting where the number belongs ("John") is John Smith, number 11.\n'
+    + '- bats: "R", "L" or "S" only if the image shows which side the player hits from, otherwise "".\n'
+    + 'List each player once, ignore coaches and team staff, and never invent a player you cannot read. If the images show no roster, reply with [].\n'
+    + 'Example: [{"num":"4","name":"Alex Rivera","bats":""},{"num":"","name":"Sam Cole","bats":"L"}]';
+  function scanError(e) {
+    const c = e && e.code;
+    if (c === 'cancelled') return '';
+    if (c === 'decode') return "That photo couldn't be opened. Try a screenshot or a JPEG photo.";
+    if (c === 'images_unavailable' || c === 'image_rejected') return 'Photo reading is not available here. Type the roster instead.';
+    if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(c)) { Caps.sample = null; return 'Reading photos needs your OK for Claude to look at them. Reload the page to be asked again, or type the roster.'; }
+    if (c === 'invalid_json' || c === 'empty_completion' || c === 'refused') return "Couldn't read a roster from that. Try a closer, straight-on shot with the names in view.";
+    if (c === 'rate_limited') return 'Claude is busy or your usage limit was reached. Try again in a bit.';
+    if (c === 'session_expired') return 'Sign in to Claude again, then retry.';
+    return 'Reading the roster failed. Check your connection and try again.';
+  }
+  async function runScan(files) {
+    const sh = UI.sheet;
+    if (!sh || !Caps.sample || !files.length) return;
+    const ctl = new AbortController();
+    sh.scan = { busy: true, ctl };
+    renderSheet();
+    let note = '';
+    try {
+      const lim = await Caps.sample.limits().catch(() => null);
+      if (!lim || !lim.images) throw { code: 'images_unavailable' };
+      const max = lim.images.maxCount || 1;
+      if (files.length > max) note = ` Only the first ${max} photos were read.`;
+      const blobs = [];
+      for (const f of files.slice(0, max)) blobs.push(await toJpeg(f));
+      if (ctl.signal.aborted) throw { code: 'cancelled' };
+      const raw = await Caps.sample.json(SCAN_PROMPT, { images: blobs, signal: ctl.signal });
+      const players = cleanRoster(raw);
+      if (UI.sheet !== sh) return;
+      if (!players.length) { sh.scan = { err: "Couldn't find any players in that photo. Try a closer, straight-on shot." }; renderSheet(); return; }
+      if (sh.type === 'roster') {
+        sh.players = mergeRoster(sh.players, players);
+        sh.scan = { msg: `Read ${players.length} player${players.length === 1 ? '' : 's'}. Check the list, then save.${note}` };
+      } else if (sh.type === 'lineup') {
+        const doc = clone(rosterFor(sh.oppName) || { name: sh.oppName, players: [] });
+        doc.name = doc.name || sh.oppName;
+        doc.players = mergeRoster(doc.players, players);
+        saveRoster(doc);
+        sh.scan = { msg: `Saved ${players.length} player${players.length === 1 ? '' : 's'} to the ${sh.oppName} roster. Tap them in batting order, or bat the whole roster.${note}` };
+        render();
+      }
+    } catch (e) {
+      if (UI.sheet !== sh) return;
+      sh.scan = { err: scanError(e) };
+    }
+    renderSheet();
+  }
 
   function destRow(g, ref, from, val, act) {
     const opts = [[0, 'Out'], [1, '1st'], [2, '2nd'], [3, '3rd'], [4, 'Home']];
@@ -1965,6 +2117,51 @@ table.st tr:last-child td { border-bottom: 0; }
       confirmSheet('Remove ' + p.name + '?', 'They come off the roster. Games already scored keep their stats.', 'Remove player', () => { Data.team.players = Data.team.players.filter((x) => x.id !== id); saveTeam(); render(); }, true);
     },
     playerCard(d) { openSheet({ type: 'playerCard', id: d.id }); },
+    roster(d) {
+      const r = d.key ? Data.opponents[d.key] : null;
+      openSheet({ type: 'roster', key: r ? d.key : null, name: r ? r.name : '', players: r ? clone(r.players) : [], scan: {} });
+    },
+    rosterAdd() { UI.sheet.players.push({ id: uid('r'), num: '', name: '', bats: '' }); renderSheet(); },
+    rosterRemove(d) { UI.sheet.players.splice(+d.i, 1); renderSheet(); },
+    saveRosterSheet() {
+      const sh = UI.sheet;
+      const name = String(sh.name || '').trim();
+      if (!name) { sh.err = 'Enter the opponent.'; return renderSheet(); }
+      const players = sh.players.map((p) => ({ id: p.id || uid('r'), num: String(p.num || '').replace(/[^0-9]/g, ''), name: String(p.name || '').trim(), bats: p.bats || '' })).filter((p) => rosterKey(p));
+      const k = oppKey(name);
+      if (!sh.key && Data.opponents[k]) {
+        const doc = clone(Data.opponents[k]);
+        doc.players = mergeRoster(doc.players, players);
+        saveRoster(doc);
+      } else saveRoster({ name: sh.key ? Data.opponents[sh.key].name : name, players });
+      closeSheet();
+      render();
+      toast('Roster saved');
+    },
+    deleteRoster() {
+      const key = UI.sheet.key;
+      const r = Data.opponents[key];
+      confirmSheet('Delete the ' + r.name + ' roster?', 'Games already scored keep their lineups and stats.', 'Delete roster', () => { removeRoster(key); render(); toast('Roster deleted'); }, true);
+    },
+    scanStop() { const sc = UI.sheet && UI.sheet.scan; if (sc && sc.ctl) sc.ctl.abort(); },
+    oppFromRoster(d) {
+      const sh = UI.sheet;
+      const R = rosterFor(sh.oppName);
+      const p = R && R.players.find((x) => x.id === d.id);
+      if (!p) return;
+      const blank = sh.opp.find((o) => !rosterKey(o));
+      if (blank) Object.assign(blank, { num: p.num || '', name: p.name || '', bats: p.bats || blank.bats || '' });
+      else if (!sh.locked) sh.opp.push({ id: uid('o'), num: p.num || '', name: p.name || '', bats: p.bats || '' });
+      else { toast('No open spots. The game has started, so use Sub on the Live screen.'); return; }
+      renderSheet();
+    },
+    wholeRoster() {
+      const sh = UI.sheet;
+      const R = rosterFor(sh.oppName);
+      if (!R || sh.locked) return;
+      sh.opp = R.players.filter((p) => rosterKey(p)).map((p) => ({ id: uid('o'), num: p.num || '', name: p.name || '', bats: p.bats || '' }));
+      renderSheet();
+    },
     teamEdit() { const t = Data.team; openSheet({ type: 'teamEdit', f: { name: t.name, pitchLimit: t.pitchLimit, innings: t.innings } }); },
     saveTeamEdit() {
       const f = UI.sheet.f;
@@ -1987,7 +2184,7 @@ table.st tr:last-child td { border-bottom: 0; }
       }, true);
     },
     async export() {
-      const data = JSON.stringify({ app: 'gs-baseball', v: 1, exported: new Date().toISOString(), team: Data.team, games: Object.values(Data.games) });
+      const data = JSON.stringify({ app: 'gs-baseball', v: 1, exported: new Date().toISOString(), team: Data.team, games: Object.values(Data.games), opponents: Object.values(Data.opponents) });
       const filename = 'gs-baseball-backup-' + todayISO() + '.json';
       if (Caps.downloads) {
         try { await Caps.downloads.save({ filename, data }); toast('Backup saved'); } catch (e) { if (e && e.code !== 'declined') toast('Could not save the backup file here.'); }
@@ -2044,6 +2241,7 @@ table.st tr:last-child td { border-bottom: 0; }
         Data.team = normTeam(d.team);
         saveTeam();
         for (const g of d.games) { if (!g || !g.id) continue; Data.games[g.id] = normGame(g); saveGame(Data.games[g.id]); }
+        for (const o of d.opponents || []) { if (o && o.name) saveRoster(normRoster(o)); }
         render();
         toast('Backup imported');
       });
@@ -2068,6 +2266,7 @@ table.st tr:last-child td { border-bottom: 0; }
   document.addEventListener('change', (ev) => {
     const el = ev.target;
     if (el.id === 'import-file' && el.files && el.files[0]) { doImport(el.files[0]); el.value = ''; return; }
+    if (el.dataset && el.dataset.scan && el.files && el.files.length) { const files = Array.from(el.files); el.value = ''; runScan(files); return; }
     if (el.dataset && el.dataset.bind && UI.sheet) setPath(UI.sheet, el.dataset.bind, el.value);
   });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && UI.sheet) closeSheet(); });
@@ -2083,9 +2282,17 @@ table.st tr:last-child td { border-bottom: 0; }
       const next = {};
       for (const doc of snap.docs) if (doc.exists) next[doc.id] = normGame(clone(doc.data()));
       for (const id in Data.games) if (Saver.busy('games/' + id)) next[id] = Data.games[id];
-      for (const id of Saver.deleting) delete next[id];
+      for (const id of Object.keys(next)) if (Saver.deleting.has('games/' + id)) delete next[id];
       Data.games = next;
       Data.loaded.games = true;
+      maybeReady();
+    }, onDbError);
+    db.collection('opponents').onSnapshot((snap) => {
+      const next = {};
+      for (const doc of snap.docs) if (doc.exists && !Saver.deleting.has('opponents/' + doc.id)) next[doc.id] = normRoster(clone(doc.data()));
+      for (const k in Data.opponents) if (Saver.busy('opponents/' + k)) next[k] = Data.opponents[k];
+      Data.opponents = next;
+      Data.loaded.opps = true;
       maybeReady();
     }, onDbError);
   }
@@ -2094,7 +2301,7 @@ table.st tr:last-child td { border-bottom: 0; }
     else toast('Live updates paused. Reload the page to reconnect.');
   }
   function maybeReady() {
-    if (Data.loaded.team && Data.loaded.games) UI.ready = true;
+    if (Data.loaded.team && Data.loaded.games && Data.loaded.opps) UI.ready = true;
     scheduleRender();
     if (UI.sheet && UI.sheet.type === 'playerCard') renderSheet();
   }

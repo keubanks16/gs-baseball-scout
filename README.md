@@ -28,6 +28,7 @@ The `scorebook/` folder is a separate GameChanger-style scorebook for games you 
 - Address: `https://YOUR-USERNAME.github.io/gs-baseball-scout/scorebook/`
 - Add it to your home screen the same way as the main app (see below). It gets its own GS icon.
 - Data is saved in the browser on that device. Use **Team → Export backup** to save a copy and **Import backup** to load it on another device. Backups exported from the Claude version of the scorebook import here too.
+- Opponent rosters live on the Team tab and fill the opponent's batting order when you set a lineup. Reading a roster from a photo works in the Claude version; here you type them in, or bring them over with a backup.
 
 ## Put it on GitHub (no coding needed)
 
