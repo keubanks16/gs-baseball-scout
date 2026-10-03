@@ -21,6 +21,14 @@ Things to know:
 - Expect roughly a third to a half of the video's length in processing time on a recent iPhone.
 - Batter names are read from the scoreboard with Tesseract OCR, which downloads once (about 4 MB) and runs on the phone. If it can't load, type each name once. Other at-bats by the same batter fill in automatically.
 
+## Scorebook
+
+The `scorebook/` folder is a separate GameChanger-style scorebook for games you keep yourself: score pitch by pitch, keep box scores and season stats, and chart where every ball goes. Its Scout tab groups opponent hitters by jersey number across games and suggests where to play your defense.
+
+- Address: `https://YOUR-USERNAME.github.io/gs-baseball-scout/scorebook/`
+- Add it to your home screen the same way as the main app (see below). It gets its own GS icon.
+- Data is saved in the browser on that device. Use **Team → Export backup** to save a copy and **Import backup** to load it on another device. Backups exported from the Claude version of the scorebook import here too.
+
 ## Put it on GitHub (no coding needed)
 
 1. Sign in at [github.com](https://github.com) (create a free account if you don't have one).
@@ -72,6 +80,7 @@ Upload the changed files to the repository again (same names replace the old one
 | `overlay.js` | Reads the GameChanger scoreboard (rows, at-bat dot, batter line, OCR) |
 | `model/` | The pose model (MoveNet Thunder, 16-bit weights) |
 | `icons/`, `manifest.webmanifest` | Home-screen icon and app settings |
+| `scorebook/` | The scorebook: live scoring, box scores, stats, spray charts and opponent scouting in one self-contained page, with its own icons and app settings |
 
 ## Credits
 
