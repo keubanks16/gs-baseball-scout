@@ -17,26 +17,59 @@ function openIDB() {
 }
 
 export async function createLocalDB() {
-  let idb = null;
-  try { idb = await openIDB(); } catch { idb = null; }
+  // iOS Safari can close the database connection behind the page's back (after a long video
+  // session, or when the page is put in the background). Reopen it whenever that happens.
+  let idb = null, opening = null;
+  const getIDB = () => {
+    if (idb) return Promise.resolve(idb);
+    if (!opening) {
+      opening = openIDB().then((d) => {
+        idb = d;
+        d.onclose = () => { if (idb === d) idb = null; };
+        d.onversionchange = () => { try { d.close(); } catch {} if (idb === d) idb = null; };
+        return d;
+      }).finally(() => { opening = null; });
+    }
+    return opening;
+  };
+  try { await getIDB(); } catch { idb = null; }
+  const persistent = !!idb;
   const docs = new Map();
   if (idb) {
     await new Promise((resolve) => {
-      const tx = idb.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).getAll();
-      req.onsuccess = () => { for (const r of req.result || []) docs.set(r.path, r.data); resolve(); };
-      req.onerror = () => resolve();
+      try {
+        const tx = idb.transaction(STORE, 'readonly');
+        const req = tx.objectStore(STORE).getAll();
+        req.onsuccess = () => { for (const r of req.result || []) docs.set(r.path, r.data); resolve(); };
+        req.onerror = () => resolve();
+      } catch { resolve(); }
     });
   }
-  const persist = (path, data) => {
-    if (!idb) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const tx = idb.transaction(STORE, 'readwrite');
-      const st = tx.objectStore(STORE);
-      if (data === undefined) st.delete(path); else st.put({ path, data });
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error('write failed'));
-    });
+  const writeOnce = (db, path, data) => new Promise((resolve, reject) => {
+    let tx;
+    try { tx = db.transaction(STORE, 'readwrite'); } catch (e) { reject(e); return; }
+    const st = tx.objectStore(STORE);
+    try { if (data === undefined) st.delete(path); else st.put({ path, data }); } catch (e) { reject(e); return; }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('write failed'));
+    tx.onabort = () => reject(tx.error || new Error('write aborted'));
+  });
+  const persist = async (path, data) => {
+    if (!persistent) return;
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { const db = await getIDB(); await writeOnce(db, path, data); return; }
+      catch (e) { last = e; const d = idb; idb = null; try { d && d.close(); } catch {} await new Promise((r) => setTimeout(r, 150 * (attempt + 1))); }
+    }
+    throw last || new Error('write failed');
+  };
+  // keep memory and disk in step: undo the change in memory when it could not be written
+  const commit = async (path, next) => {
+    const had = docs.has(path), prev = docs.get(path);
+    if (next === undefined) docs.delete(path); else docs.set(path, next);
+    notify();
+    try { await persist(path, next); }
+    catch (e) { if (had) docs.set(path, prev); else docs.delete(path); notify(); throw e; }
   };
   const listeners = new Set();
   let pending = false;
@@ -52,13 +85,13 @@ export async function createLocalDB() {
     return {
       id: seg(path).pop(), path,
       async get() { return snapDoc(path); },
-      async set(d) { const c = clone(d); docs.set(path, c); notify(); await persist(path, c); },
+      async set(d) { await commit(path, clone(d)); },
       async update(d) {
         if (!docs.has(path)) throw { code: 'invalid_argument', message: 'document does not exist' };
         const merge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b)) o[k] = v && typeof v === 'object' && !Array.isArray(v) && a && typeof a[k] === 'object' && !Array.isArray(a[k]) ? merge(a[k] || {}, v) : v; return o; };
-        const c = merge(docs.get(path), clone(d)); docs.set(path, c); notify(); await persist(path, c);
+        await commit(path, merge(docs.get(path), clone(d)));
       },
-      async delete() { docs.delete(path); notify(); await persist(path, undefined); },
+      async delete() { if (docs.has(path)) await commit(path, undefined); },
       onSnapshot(next) { const l = () => next(snapDoc(path)); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l); },
       collection(p) { return colRef(path + '/' + p); },
     };
@@ -85,7 +118,7 @@ export async function createLocalDB() {
   }
   return {
     doc: docRef, collection: colRef,
-    persistent: !!idb,
+    persistent,
     size: () => docs.size,
     exportAll: () => ({ app: 'gs-baseball-scout', version: 1, exportedAt: new Date().toISOString(), docs: Object.fromEntries(docs) }),
     async importAll(obj, { replace = false } = {}) {

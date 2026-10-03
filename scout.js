@@ -470,7 +470,7 @@ export async function analyzePlay({ video, pose, cal, cand, field, signal, onPro
     if (bat) { bat.t = ts; break; }
   }
   if (!bat) return { error: 'no_batter' };
-  const tEnd = tRun + 0.8;
+  const tEnd = tRun + 1.2;
   let res = null;
   // if the batter is lost (stepping out, the catcher in the way), start again a little later
   for (const t0 of [bat.t, tRun - 3.6, tRun - 2.8]) {
@@ -530,8 +530,12 @@ export function batterRan(res, tEnd, cal) {
     }
   }
   const lastT = c.length ? c[c.length - 1].t : tc;
-  const ran = mx > 1.2 || (mx > 0.75 && (toFirst == null || toFirst > 1.0)) || (toFirst != null && toFirst > 2.5);
-  return { moved: Math.round(mx * 100) / 100, toFirst, lastT: Math.round(lastT * 100) / 100, ran };
+  // the tracker lets go when the batter runs off: losing them soon after contact counts too
+  const stoppedEarly = lastT > tc + 0.15 && lastT < tEnd - 0.35;
+  const ran = mx > 1.0 || (toFirst != null && toFirst > 2.0)
+    || (mx > 0.6 && (toFirst == null || toFirst > 0.5))
+    || (stoppedEarly && (toFirst == null || toFirst > 0));
+  return { moved: Math.round(mx * 100) / 100, toFirst, lastT: Math.round(lastT * 100) / 100, stoppedEarly, ran };
 }
 
 // a square picture of the batter at contact (jpeg data URL) and where it came from

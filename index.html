@@ -456,6 +456,7 @@ label.f.wide { grid-column: 1 / -1; }
 
       <section class="panel" id="scResults" hidden>
         <div class="panel-h"><h2>Balls in play</h2><span class="aside" id="scResAside"></span></div>
+        <p class="small" id="scRestored" hidden style="margin:-4px 0 10px"></p>
         <div class="fieldbox" id="scField"></div>
         <div class="legend" id="scLegend"></div>
         <div class="plays" id="scList"></div>
@@ -1617,6 +1618,7 @@ async function scoutFiles(files) {
   const unsaved = G.plays.filter((p) => p.include && !p.savedId).length;
   if (unsaved && !confirm(`${unsaved} ball${unsaved === 1 ? '' : 's'} in play from the last video are not saved yet. Start a new game anyway?`)) return;
   files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  clearDraft();
   Object.assign(G, { files: files.map((f) => ({ file: f, status: 'new', dur: null, cal: null })), taps: [], zoom: null, cal: null, baseErr: '', teams: null, teamNote: '', target: 'all', game: '', needCal: null, plays: [], clusters: [], watch: null, live: null, stats: null });
   G.bp = Number(S.field.basePath) || 60;
   ensurePose().catch(() => {});
@@ -1877,7 +1879,7 @@ function renderTeam(busy) {
   }));
   if ($('scGame').value !== G.game) $('scGame').value = G.game;
 }
-$('scGame').addEventListener('input', () => { G.game = $('scGame').value; });
+$('scGame').addEventListener('input', () => { G.game = $('scGame').value; saveDraft(); });
 
 // a name for each play's batter: the batter row of the scoreboard, read once per distinct row
 function boardFor(play, corner) {
@@ -1925,7 +1927,7 @@ async function readCluster(cl, corner, L) {
     if (chosen && !L.batter) cl.preview = OV.rowPreview(corner, chosen);
   }
   for (const p of cl.plays) applyCluster(p);
-  renderResults();
+  renderResults(); saveDraft();
 }
 function applyCluster(p) {
   const cl = p.cluster; if (!cl) return;
@@ -2011,6 +2013,7 @@ async function scoutRun() {
         });
         G.live = null; scDraw();
         G.stats.perPlay.push((performance.now() - t1) / 1000);
+        (G.stats.why || (G.stats.why = [])).push({ t: Math.round(cand.t * 10) / 10, error: r.error || null, run: r.run || null, conf: r.outcome ? r.outcome.conf : null });
         if (r.error) { if (r.error === 'no_swing' || r.error === 'no_run') G.stats.noswing++; else G.stats.nobatter++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
         if (r.outcome && r.outcome.foul) { G.stats.foul++; play.cluster.plays = play.cluster.plays.filter((q) => q !== play); continue; }
         Object.assign(play, r);
@@ -2022,7 +2025,7 @@ async function scoutRun() {
         } else { play.x = null; play.y = null; play.type = r.ball && r.ball.type || null; play.include = false; play.needsPlace = true; }
         applyCluster(play);
         G.plays.push(play); G.stats.found++;
-        renderResults(); renderRun();
+        renderResults(); renderRun(); saveDraft();
       }
       it.status = 'done'; G.stats.videoDone += it.dur || 0; renderParts();
     }
@@ -2039,13 +2042,56 @@ async function scoutRun() {
   }
 }
 
+// ---------------------------------------------------------------- unsaved list survives a reload
+// iOS can reload a page that sat in the background, and a long scout is easy to lose that way.
+// The found balls in play (not the video) are kept in this browser until they are saved.
+const DRAFT_KEY = 'gsscout.scoutDraft';
+const r3 = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
+function draftOf(p, withThumb = true) {
+  const a = p.analysis;
+  return {
+    id: p.id, fileName: p.fileName, cand: p.cand ? { t: p.cand.t } : null, name: p.name, number: p.number, team: p.team, nameSrc: p.nameSrc,
+    include: p.include, bats: p.bats, type: p.type, x: p.x, y: p.y, moved: !!p.moved, needsPlace: !!p.needsPlace, tContact: p.tContact,
+    count: p.count || '', inning: p.inning || '', preview: p.preview || null, vw: p.vw, vh: p.vh,
+    thumb: withThumb && p.thumb ? p.thumb : null, outcome: p.outcome || null,
+    ball: p.ball && p.ball.found ? { found: true, air: p.ball.air, type: p.ball.type, track: p.ball.track.map((q) => ({ t: r3(q.t), x: Math.round(q.x), y: Math.round(q.y) })) } : { found: false },
+    analysis: a ? { events: a.events, metrics: a.metrics, H: a.H, swingT: a.swingT, packed: packFrames(a.frames, p.vw, p.vh) } : null,
+  };
+}
+let draftTimer = null;
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    const todo = G.plays.filter((p) => !p.savedId && p.analysis);
+    try {
+      if (!todo.length) { localStorage.removeItem(DRAFT_KEY); return; }
+      const body = (thumbs) => JSON.stringify({ v: 1, savedAt: Date.now(), game: G.game, teams: G.teams, plays: todo.map((p) => draftOf(p, thumbs)) });
+      try { localStorage.setItem(DRAFT_KEY, body(true)); } catch { localStorage.setItem(DRAFT_KEY, body(false)); }
+    } catch {}
+  }, 300);
+}
+function restoreDraft() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { d = null; }
+  if (!d || !Array.isArray(d.plays) || !d.plays.length) return;
+  const plays = [];
+  for (const q of d.plays) {
+    if (!q.analysis || !q.analysis.packed) continue;
+    let frames; try { frames = unpackFrames(q.analysis.packed); } catch { continue; }
+    plays.push({ ...q, file: -1, restored: true, analysis: { events: q.analysis.events, metrics: q.analysis.metrics, H: q.analysis.H, swingT: q.analysis.swingT, frames } });
+  }
+  if (!plays.length) return;
+  G.plays = plays; G.game = d.game || ''; G.teams = d.teams || null; G.phase = 'done'; G.restored = d.savedAt || Date.now();
+}
+function clearDraft() { clearTimeout(draftTimer); try { localStorage.removeItem(DRAFT_KEY); } catch {} G.restored = null; }
+
 // ---------------------------------------------------------------- panels
 function renderScout() {
   const ph = G.phase, has = G.files.length > 0;
   $('scIntro').hidden = has;
   $('scBases').hidden = !(ph === 'bases' || ph === 'team');
   $('scTeam').hidden = ph !== 'team';
-  $('scRun').hidden = !(ph === 'team' || ph === 'running' || ph === 'done' || ph === 'stopped' || G.needCal != null);
+  $('scRun').hidden = !(ph === 'team' || ph === 'running' || ph === 'done' || ph === 'stopped' || G.needCal != null) || (!!G.restored && !G.files.length);
   $('scResults').hidden = !G.plays.length && !(ph === 'done' || ph === 'stopped');
   $('scChange').hidden = !!G.abort;
   if (ph === 'bases') { renderBases(); }
@@ -2082,6 +2128,8 @@ function renderResults() {
   $('scField').innerHTML = fieldSVG({ id: 'sc', dots: inc.map((p) => ({ x: p.x, y: p.y, type: p.type })) });
   $('scLegend').innerHTML = `<span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="var(--ink)"/></svg>Ground ball</span><span><svg width="12" height="12"><path d="M6 1 L11 10 L1 10 Z" fill="var(--ink)"/></svg>Line drive</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.2" fill="none" stroke="var(--ink)" stroke-width="2"/></svg>Fly ball</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="3.6" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="2 1.5"/></svg>Pop up</span>`;
   $('scResAside').textContent = G.plays.length ? `${inc.length} of ${G.plays.length} set to save` : '';
+  $('scRestored').hidden = !G.restored || !G.plays.some((p) => !p.savedId);
+  if (G.restored) $('scRestored').textContent = `Kept from your last scout (${new Date(G.restored).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}). They stay here until you save them or scout another game.`;
   const focus = document.activeElement && document.activeElement.closest && document.activeElement.closest('.play');
   if (focus && $('scList').contains(focus)) { renderSaveState(); return; }       // don't redraw under the user's typing
   $('scList').innerHTML = G.plays.length ? G.plays.map((p) => {
@@ -2104,10 +2152,10 @@ function renderResults() {
       // same scoreboard line, same batter: fill the others that were not typed by hand
       if (p.cluster) for (const q of p.cluster.plays) if (q !== p && q.nameSrc !== 'typed' && !q.savedId) { q.name = p.name; q.number = p.number; const el = $('scList').querySelector(`.play[data-id="${CSS.escape(q.id)}"] .pn`); if (el) el.value = q.name; }
       const h = Object.values(S.hitters).find((x) => slug(x.name) === slug(p.name)); if (h && !p.number) { p.number = h.number || ''; nu.value = p.number; }
-      renderSaveState();
+      renderSaveState(); saveDraft();
     });
-    nu && nu.addEventListener('input', () => { p.number = nu.value; p.nameSrc = 'typed'; renderSaveState(); });
-    cb && cb.addEventListener('change', () => { p.include = cb.checked; row.classList.toggle('off', !p.include); renderField(); renderSaveState(); });
+    nu && nu.addEventListener('input', () => { p.number = nu.value; p.nameSrc = 'typed'; renderSaveState(); saveDraft(); });
+    cb && cb.addEventListener('change', () => { p.include = cb.checked; row.classList.toggle('off', !p.include); renderField(); renderSaveState(); saveDraft(); });
     row.querySelector('.pw').onclick = () => scWatch(p);
     const adj = row.querySelector('.pm'); if (adj) adj.onclick = () => scAdjust(p);
   });
@@ -2131,6 +2179,7 @@ function renderSaveState() {
 
 async function scWatch(p) {
   if (G.abort) { toast('Watch is available when scouting finishes or is stopped.'); return; }
+  if (p.restored || !G.files[p.file]) { toast('This list was restored after the page reloaded, so the video is not loaded. Save them, or scout the video again to watch.', 5000); return; }
   if (p.file !== G.fi) { if (!(await scOpen(p.file))) return; }
   G.watch = p; G.zoom = null; scZoomCSS();
   $('scStage').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -2159,7 +2208,7 @@ function scAdjust(p) {
     $('adSave').onclick = () => {
       if (t.x == null || !t.type) { toast('Tap where the ball went and pick the batted-ball type.'); return; }
       Object.assign(p, { x: t.x, y: t.y, type: t.type, bats: t.bats, moved: true, include: true, needsPlace: false });
-      close(); renderResults();
+      close(); renderResults(); saveDraft();
     };
   });
 }
@@ -2197,7 +2246,7 @@ async function scoutSave() {
     toast(`Saved ${n} ball${n === 1 ? '' : 's'} in play to the spray charts.`);
   } catch (e) {
     toast(e && e.code === 'quota_exceeded' ? `Saved ${n}. The team database is full; delete old at-bats to make room.` : `Saved ${n}. Could not save the rest: ` + (e && (e.message || e.code) || 'unknown error'), 6000);
-  } finally { G.saving = false; renderResults(); }
+  } finally { G.saving = false; renderResults(); saveDraft(); }
 }
 window.__scout = { G, scoutFiles, scCalibrate, renderScout, scoutRun };
 
@@ -2207,9 +2256,11 @@ function renderAll() {
   if (S.view === 'hitters') renderHitters();
   if (!$('pCall').hidden) { if (!S.predFrozen && S.analysis) computePrediction(); renderCall(); }
 }
+restoreDraft();
 renderAll();
 renderSync();
 initCaps();
+if (G.plays.length) renderScout();
 if (location.hash === '#hitters') setView('hitters');
 else if (location.hash === '#scout') setView('scout');
 </script>
