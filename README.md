@@ -28,7 +28,23 @@ The `scorebook/` folder is a separate GameChanger-style scorebook for games you 
 - Address: `https://YOUR-USERNAME.github.io/gs-baseball-scout/scorebook/`
 - Add it to your home screen the same way as the main app (see below). It gets its own GS icon.
 - Data is saved in the browser on that device. Use **Team → Export backup** to save a copy and **Import backup** to load it on another device. Backups exported from the Claude version of the scorebook import here too.
-- Opponent rosters live on the Team tab and fill the opponent's batting order when you set a lineup. Reading a roster from a photo works in the Claude version; here you type them in, or bring them over with a backup.
+- Opponent rosters live on the Team tab and fill the opponent's batting order when you set a lineup. To read rosters from photos and get scouting reports here, connect Claude (next section).
+
+### Claude connection for the scorebook
+
+Roster photo scanning and scouting reports use your own Claude API key. The key stays in a free Cloudflare Worker, never on this public site. A roster scan costs about a cent or two on your API account; a scouting report costs less. Setup takes about 15 minutes and is easiest on a computer.
+
+1. **Get a Claude API key.** Sign in at [console.anthropic.com](https://console.anthropic.com). Under **Billing**, add a little credit and set a monthly spend limit. Then go to **API Keys → Create Key** and copy the key (it starts with `sk-ant-`). It's shown only once.
+2. **Create the Worker.** Sign up free at [dash.cloudflare.com](https://dash.cloudflare.com). Go to **Workers & Pages → Create**, start from the "Hello World" Worker, name it `gs-scorebook-ai`, and deploy it.
+3. **Paste the code.** Open the Worker and choose **Edit code**. Replace everything with the contents of [`scorebook/worker.js`](scorebook/worker.js) (open it, then **Raw** to copy it cleanly) and deploy again.
+4. **Add two secrets.** In the Worker, go to **Settings → Variables and Secrets** and add, each as type **Secret**:
+   - `ANTHROPIC_API_KEY`: the key from step 1
+   - `ACCESS_CODE`: any passphrase you make up
+
+   The Worker only answers requests from `https://keubanks16.github.io`. If the scorebook lives somewhere else, add a text variable `ALLOWED_ORIGIN` with that address.
+5. **Connect the scorebook.** Copy the Worker's address (like `https://gs-scorebook-ai.YOUR-NAME.workers.dev`). In the scorebook, open **Team → Claude connection → Set up**, paste the address and your access code, tap **Test connection**, then **Save**.
+
+The connection is saved on each device, so repeat step 5 on every phone you score from. Without the access code, nobody else can use your Worker.
 
 ## Put it on GitHub (no coding needed)
 
@@ -82,6 +98,7 @@ Upload the changed files to the repository again (same names replace the old one
 | `model/` | The pose model (MoveNet Thunder, 16-bit weights) |
 | `icons/`, `manifest.webmanifest` | Home-screen icon and app settings |
 | `scorebook/` | The scorebook: live scoring, box scores, stats, spray charts and opponent scouting in one self-contained page, with its own icons and app settings |
+| `scorebook/worker.js` | Cloudflare Worker that keeps your Claude API key off the site and reads roster photos and writes scouting reports for the scorebook |
 
 ## Credits
 

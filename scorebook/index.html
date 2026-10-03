@@ -836,6 +836,54 @@ table.st tr:last-child td { border-bottom: 0; }
   const rosterKey = (o) => (o && String(o.num || '').trim() ? '#' + String(o.num).trim() : o && String(o.name || '').trim() ? String(o.name).trim().toLowerCase() : '');
   const UI = { tab: 'games', gameId: null, gameTab: 'box', sprayWho: 'us', statsMode: 'bat', sort: { bat: 'PA', pit: 'OUTS' }, scoutOpp: null, scoutKey: '*', sprayMode: 'dots', liveId: null, readOnly: false, canWrite: null, ready: false, sheet: null, ai: {} };
   const Caps = { sample: null, downloads: null };
+
+  // ---------- Claude through your own Cloudflare Worker (GitHub Pages copy) ----------
+  const AI_KEY = 'gs-baseball-ai';
+  function loadAiCfg() { try { const c = JSON.parse(localStorage.getItem(AI_KEY) || 'null'); return c && c.url && c.code ? c : null; } catch (e) { return null; } }
+  function saveAiCfg(c) { try { if (c) localStorage.setItem(AI_KEY, JSON.stringify(c)); else localStorage.removeItem(AI_KEY); return true; } catch (e) { return false; } }
+  function normAiCfg(sh) {
+    const url = String(sh.url || '').trim().replace(/\/+$/, '');
+    const code = String(sh.code || '').trim();
+    return /^https:\/\/[^\s/]+\.[^\s]+$/.test(url) && code ? { url, code } : null;
+  }
+  function blobToB64(b) {
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej({ code: 'decode' }); r.readAsDataURL(b); });
+  }
+  function parseLooseJson(t) {
+    const s = String(t || '').trim();
+    const tries = [s];
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) tries.push(fence[1]);
+    const a = s.search(/[[{]/), z = Math.max(s.lastIndexOf(']'), s.lastIndexOf('}'));
+    if (a >= 0 && z > a) tries.push(s.slice(a, z + 1));
+    for (const x of tries) { try { return JSON.parse(x); } catch (e) { /* try the next shape */ } }
+    throw { code: 'invalid_json', text: s };
+  }
+  function makeWorkerAI(cfg) {
+    async function call(task, prompt, opts) {
+      const o = opts || {};
+      const images = [];
+      if (o.images) for (const b of Array.from(o.images)) images.push({ media_type: b.type || 'image/jpeg', data: await blobToB64(b) });
+      let r;
+      try {
+        r = await fetch(cfg.url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-gs-code': cfg.code }, body: JSON.stringify({ task, prompt, images }), signal: o.signal });
+      } catch (e) { throw { code: e && e.name === 'AbortError' ? 'cancelled' : 'network' }; }
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) throw { code: (d && d.error) || (r.status === 401 ? 'bad_code' : 'upstream_error'), message: (d && d.detail) || '' };
+      return d;
+    }
+    const ai = async (prompt, opts) => {
+      const d = await call('scout', prompt, opts);
+      if (!d.text) throw { code: 'empty_completion' };
+      if (opts && opts.onText) opts.onText({ text: d.text, delta: d.text });
+      return { text: d.text, truncated: !!d.truncated };
+    };
+    ai.json = async (prompt, opts) => parseLooseJson((await call('roster', prompt, opts)).text);
+    ai.limits = async () => ({ maxPromptBytes: 24000, images: { maxCount: 5, maxInputBytes: 20000000, mediaTypes: ['image/jpeg', 'image/png', 'image/webp'] } });
+    ai.ping = () => call('ping', 'ping', {});
+    ai.worker = true;
+    return ai;
+  }
   try { const t = localStorage.getItem('gs-baseball-tab'); if (t) UI.tab = t; } catch (e) { /* per-viewer convenience only */ }
   const hashTab = (location.hash || '').slice(1);
   if (['games', 'live', 'stats', 'scout', 'team'].includes(hashTab)) UI.tab = hashTab;
@@ -1532,6 +1580,10 @@ table.st tr:last-child td { border-bottom: 0; }
       if (!rs.length) h += `<div class="card empty" style="padding:20px"><p>${Caps.sample ? 'Take a photo or screenshot of another team\'s roster and Claude reads the names and numbers into it.' : 'Save each opponent\'s roster so lineups and scouting show names, not just numbers.'}</p><button class="btn primary" data-act="roster">+ Add roster</button></div>`;
       else h += `<div class="card roster">${rs.map(([k, r]) => `<button class="player" data-act="roster" data-key="${esc(k)}"><span class="no" style="font-size:16px">${esc((r.name || '?').slice(0, 3).toUpperCase())}</span><span style="min-width:0"><span class="nm">${esc(r.name)}</span><span class="meta">${r.players.length} player${r.players.length === 1 ? '' : 's'}${r.updatedAt ? ' · updated ' + esc(new Date(r.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : ''}</span></span><span class="meta">Edit</span></button>`).join('')}</div>`;
     }
+    if (UI.standalone && canEdit()) {
+      const c = loadAiCfg();
+      h += `<h2 class="sec">Claude connection</h2><section class="card stack" style="padding:14px"><p style="margin:0">${c ? 'Connected. Roster photo scanning and scouting reports are on.' : 'Not set up. Connect your own Claude API key to scan roster photos and get scouting reports.'}</p><div><button class="btn${c ? '' : ' primary'}" data-act="aiSetup">${c ? 'Change connection' : 'Set up'}</button></div></section>`;
+    }
     h += `<h2 class="sec">Your data</h2><section class="card stack" style="padding:14px">`;
     if (Backend.kind === 'db') h += `<p style="margin:0">Games and the roster are saved with this page in your Claude account, so they sync across your devices. Share the page and families can follow games live as you score.</p>`;
     else h += `<p style="margin:0">Games and the roster are saved in this browser on this device. Export a backup now and then so nothing is lost if the browser data is cleared.</p>`;
@@ -1679,6 +1731,15 @@ table.st tr:last-child td { border-bottom: 0; }
         ${sh.err ? `<div class="warn-text">${esc(sh.err)}</div>` : ''}
         <div class="row"><button class="btn primary" data-act="saveRosterSheet">Save roster</button>${sh.key ? '<button class="btn danger" data-act="deleteRoster">Delete roster</button>' : '<button class="btn" data-act="close">Cancel</button>'}</div>`;
     },
+    ai(sh) {
+      const t = sh.test;
+      const status = !t ? '' : t.busy ? '<div class="scan"><span class="spin" aria-hidden="true"></span><span>Checking the connection…</span></div>' : t.ok ? '<div class="small" style="color:var(--good);font-weight:600">Connected. Claude answered.</div>' : `<div class="warn-text">${esc(t.err)}</div>`;
+      return head('Claude connection') + `<p class="small muted" style="margin:0">Roster photo scanning and scouting reports use your own Claude API key, kept in your Cloudflare Worker so it never sits on this public site. <a href="https://github.com/keubanks16/gs-baseball-scout#claude-connection-for-the-scorebook" target="_blank" rel="noopener">Setup steps</a></p>
+        <label><span class="field-lbl">Worker address</span>${inp('url', sh.url, 'type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://gs-scorebook-ai.yourname.workers.dev"')}</label>
+        <label><span class="field-lbl">Access code</span>${inp('code', sh.code, 'autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="The ACCESS_CODE you set in the Worker"')}</label>
+        ${status}
+        <div class="row"><button class="btn primary" data-act="aiSave">Save</button><button class="btn" data-act="aiTest" ${t && t.busy ? 'disabled' : ''}>Test connection</button>${loadAiCfg() ? '<button class="btn danger" data-act="aiDisconnect">Disconnect</button>' : ''}</div>`;
+    },
     teamEdit(sh) {
       return head('Team settings') + `<label><span class="field-lbl">Team name</span>${inp('f.name', sh.f.name)}</label>
         <div class="grid2"><label><span class="field-lbl">Pitch limit</span>${inp('f.pitchLimit', sh.f.pitchLimit, 'type="number" min="0" inputmode="numeric"')}</label><label><span class="field-lbl">Innings per game</span>${inp('f.innings', sh.f.innings, 'type="number" min="1" max="12" inputmode="numeric"')}</label></div>
@@ -1740,7 +1801,7 @@ table.st tr:last-child td { border-bottom: 0; }
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej({ code: 'decode' }); i.src = url; });
-      const scale = Math.min(1, 2200 / Math.max(img.naturalWidth, img.naturalHeight));
+      const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(img.naturalWidth * scale));
       c.height = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -1782,16 +1843,33 @@ table.st tr:last-child td { border-bottom: 0; }
     + '- bats: "R", "L" or "S" only if the image shows which side the player hits from, otherwise "".\n'
     + 'List each player once, ignore coaches and team staff, and never invent a player you cannot read. If the images show no roster, reply with [].\n'
     + 'Example: [{"num":"4","name":"Alex Rivera","bats":""},{"num":"","name":"Sam Cole","bats":"L"}]';
-  function scanError(e) {
+  const HIDE_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
+  function aiErrorText(e, what) {
     const c = e && e.code;
-    if (c === 'cancelled') return '';
-    if (c === 'decode') return "That photo couldn't be opened. Try a screenshot or a JPEG photo.";
-    if (c === 'images_unavailable' || c === 'image_rejected') return 'Photo reading is not available here. Type the roster instead.';
-    if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(c)) { Caps.sample = null; return 'Reading photos needs your OK for Claude to look at them. Reload the page to be asked again, or type the roster.'; }
-    if (c === 'invalid_json' || c === 'empty_completion' || c === 'refused') return "Couldn't read a roster from that. Try a closer, straight-on shot with the names in view.";
-    if (c === 'rate_limited') return 'Claude is busy or your usage limit was reached. Try again in a bit.';
-    if (c === 'session_expired') return 'Sign in to Claude again, then retry.';
-    return 'Reading the roster failed. Check your connection and try again.';
+    const scan = what === 'scan';
+    switch (c) {
+      case 'cancelled': return '';
+      case 'decode': return "That photo couldn't be opened. Try a screenshot or a JPEG photo.";
+      case 'images_unavailable': case 'image_rejected': case 'bad_image': case 'too_many_images': return "That photo couldn't be sent. Try a screenshot, or fewer photos at once.";
+      case 'bad_code': return "The access code doesn't match the one in your Cloudflare Worker. Fix it under Team, Claude connection.";
+      case 'bad_key': return 'Your Cloudflare Worker has a Claude API key that was rejected. Check ANTHROPIC_API_KEY in the Worker.';
+      case 'no_credit': return 'Your Claude API account is out of credit. Add credit at console.anthropic.com.';
+      case 'origin': return "Your Cloudflare Worker doesn't allow this site. Check ALLOWED_ORIGIN in the Worker.";
+      case 'not_configured': return 'Your Cloudflare Worker is missing ANTHROPIC_API_KEY or ACCESS_CODE.';
+      case 'network': return "Couldn't reach your Cloudflare Worker. Check its address and your connection.";
+      case 'rate_limited': return 'Claude is busy or your usage limit was reached. Try again in a bit.';
+      case 'session_expired': return 'Sign in to Claude again, then retry.';
+      case 'invalid_json': case 'empty_completion': case 'refused':
+        return scan ? "Couldn't read a roster from that. Try a closer, straight-on shot with the names in view." : 'Claude could not write a report from this data.';
+      default: break;
+    }
+    if (HIDE_CODES.includes(c)) return scan ? 'Reading photos needs your OK for Claude to look at them. Reload the page to be asked again, or type the roster.' : '';
+    if (what === 'test') return 'The test failed. Check the Worker address and try again.';
+    return scan ? 'Reading the roster failed. Check your connection and try again.' : 'The report could not be finished. Try again.';
+  }
+  function scanError(e) {
+    if (HIDE_CODES.includes(e && e.code) && Caps.sample && !Caps.sample.worker) Caps.sample = null;
+    return aiErrorText(e, 'scan');
   }
   async function runScan(files) {
     const sh = UI.sheet;
@@ -2162,6 +2240,27 @@ table.st tr:last-child td { border-bottom: 0; }
       sh.opp = R.players.filter((p) => rosterKey(p)).map((p) => ({ id: uid('o'), num: p.num || '', name: p.name || '', bats: p.bats || '' }));
       renderSheet();
     },
+    aiSetup() { const c = loadAiCfg() || { url: '', code: '' }; openSheet({ type: 'ai', url: c.url, code: c.code, test: null }); },
+    async aiTest() {
+      const sh = UI.sheet;
+      const cfg = normAiCfg(sh);
+      if (!cfg) { sh.test = { err: 'Enter the Worker address (it starts with https://) and the access code.' }; return renderSheet(); }
+      sh.test = { busy: true };
+      renderSheet();
+      try { await makeWorkerAI(cfg).ping(); sh.test = { ok: true }; } catch (e) { sh.test = { err: aiErrorText(e, 'test') || 'The test was stopped.' }; }
+      if (UI.sheet === sh) renderSheet();
+    },
+    aiSave() {
+      const sh = UI.sheet;
+      const cfg = normAiCfg(sh);
+      if (!cfg) { sh.test = { err: 'Enter the Worker address (it starts with https://) and the access code.' }; return renderSheet(); }
+      if (!saveAiCfg(cfg)) { sh.test = { err: 'This browser blocked saving the connection.' }; return renderSheet(); }
+      Caps.sample = makeWorkerAI(cfg);
+      closeSheet();
+      render();
+      toast('Claude connection saved');
+    },
+    aiDisconnect() { saveAiCfg(null); Caps.sample = null; closeSheet(); render(); toast('Claude connection removed'); },
     teamEdit() { const t = Data.team; openSheet({ type: 'teamEdit', f: { name: t.name, pitchLimit: t.pitchLimit, innings: t.innings } }); },
     saveTeamEdit() {
       const f = UI.sheet.f;
@@ -2220,11 +2319,9 @@ table.st tr:last-child td { border-bottom: 0; }
       } catch (e) {
         const code = e && e.code;
         const keep = (e && e.text) || '';
-        if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) { Caps.sample = null; UI.ai[key] = {}; }
+        if (HIDE_CODES.includes(code) && Caps.sample && !Caps.sample.worker) { Caps.sample = null; UI.ai[key] = {}; }
         else if (code === 'cancelled') UI.ai[key] = { text: keep };
-        else if (code === 'rate_limited') UI.ai[key] = { text: keep, err: 'Claude is busy or your usage limit was reached. Try again in a bit.' };
-        else if (code === 'session_expired') UI.ai[key] = { text: keep, err: 'Sign in to Claude again to ask for a report.' };
-        else UI.ai[key] = { text: code === 'refused' ? '' : keep, err: 'The report could not be finished. Try again.' };
+        else UI.ai[key] = { text: code === 'refused' ? '' : keep, err: aiErrorText(e, 'report') };
       }
       render();
     },
@@ -2309,6 +2406,9 @@ table.st tr:last-child td { border-bottom: 0; }
     render();
     const C = window.claude;
     if (!C || typeof C.use !== 'function') {
+      UI.standalone = true;
+      const cfg = loadAiCfg();
+      if (cfg) Caps.sample = makeWorkerAI(cfg);
       Backend.loadLocal();
       UI.ready = true;
       render();
